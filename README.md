@@ -28,7 +28,7 @@ The backend is powered by **n8n** for automation and logic orchestration, **Next
 ## **Key Features**
 
 * Natural language to Master To-Do List  
-* Morning planning logic: parses today’s Google Calendar events and tasks at 07:45  
+* Morning planning logic: parses today's Google Calendar events and tasks at 07:45  
 * Builds a time‑blocked schedule with buffers  
 * Smart check-ins and dynamic pacing throughout the day  
 * Spontaneous requests captured via chat interface  
@@ -138,13 +138,13 @@ scheduled\_datetime: today by 5pm
 
 It may respond:
 
-"Why don’t you just do it now?"
+"Why don't you just do it now?"
 
 If you give a reason (e.g., "I'm on a call"), it'll:
 
 * Predict when you'll be free  
 * Schedule a reminder (e.g., in 15 minutes)  
-* Confirm with something like: *"I’ll remind you in 15\. Good luck surviving Amazon search."*
+* Confirm with something like: *"I'll remind you in 15\. Good luck surviving Amazon search."*
 
 \---
 
@@ -157,7 +157,7 @@ The planner supports a range of management styles to match your motivation type.
 * Passive-Aggressive Californian – breezy and polite with pointed reminders.  
 * Quiet Observer – minimal interruptions, ideal for self-directed workflows.
 
-Change styles anytime or shape tone gradually by adding notes like “be more assertive” to improvement\_requests.md.
+Change styles anytime or shape tone gradually by adding notes like "be more assertive" to improvement\_requests.md.
 
 ---
 
@@ -220,4 +220,24 @@ npm test
 ## **License**
 
 MIT © 2025 Jeff Steele
+
+## **n8n Workflow Architecture**
+
+The automation and orchestration backbone of the Daily Planner AI Agent is powered by a set of modular n8n workflows, deployed on Fly.io. The main workflow, `main_planner.json`, acts as the central router and orchestrator, delegating user requests to specialized tool workflows:
+
+- **Life Folder Tool** (`life_folder.json`): Handles user details, project info, and document management via Google Drive and Sheets.
+- **Todo Tool** (`todo.json`): Manages the master to-do list, project metadata, and task updates using Google Sheets.
+- **Calendar Tool** (`calendar.json`): Manages Google Calendar events, including creation, updates, and deletions.
+
+### Workflow Integration
+
+- **Current State:** The `main_planner.json` workflow is triggered by Slack messages (via Slack Trigger node) and responds in Slack.
+- **Planned Update:** The Slack integration will be replaced with a direct connection to the custom Next.js front-end. The front-end will send user requests to n8n via HTTP/webhook, and receive responses for display in the UI chat overlay.
+
+**How to Update Workflows:**
+- Export the relevant workflow JSON from n8n running on Fly.io.
+- Edit the workflow as needed (e.g., update trigger nodes, tool connections).
+- Re-import or update the workflow in the n8n instance.
+
+**Note:** The n8n Dockerfile and deployment are managed separately on Fly.io, so workflow updates can be made independently by copying/pasting JSON.
 
