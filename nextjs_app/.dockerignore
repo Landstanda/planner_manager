@@ -1,0 +1,28 @@
+Dockerfile
+.dockerignore
+
+# Git files
+.git
+.gitignore
+
+# Dependencies
+node_modules
+
+# Next.js build outputs
+.next
+out
+
+# Local environment files
+.env*.local
+
+# Test files and configs (optional, depending on strategy)
+# cypress
+# jest.config.js
+# playwright.config.js
+
+# Editor and OS specific
+.vscode
+.DS_Store
+
+# Markdown files (optional)
+*.md 

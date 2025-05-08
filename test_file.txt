@@ -1,0 +1,2 @@
+This is a test file to verify we're pushing from the correct planner_manager directory.
+Daily Planner AI Agent project. 
