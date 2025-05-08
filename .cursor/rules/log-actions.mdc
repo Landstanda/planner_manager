@@ -1,0 +1,6 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Log each significant action and it's outcome in [actions.md](mdc:actions.md).

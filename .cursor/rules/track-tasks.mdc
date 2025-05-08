@@ -1,0 +1,6 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+[task.md](mdc:task.md) is the project task list. Pursue tasks in order & mark off tasks as their completed.
