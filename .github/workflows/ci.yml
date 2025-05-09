@@ -1,0 +1,43 @@
+name: Next.js CI
+
+on:
+  push:
+    branches: [ main ] # Or your primary branch, e.g., master
+  pull_request:
+    branches: [ main ] # Or your primary branch
+
+jobs:
+  build-and-lint:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: nextjs_app/package-lock.json
+
+    - name: Install dependencies
+      working-directory: ./nextjs_app
+      run: npm ci
+
+    - name: Lint project
+      working-directory: ./nextjs_app
+      run: npm run lint
+
+    - name: Build project
+      working-directory: ./nextjs_app
+      run: npm run build
+
+    # Add a step for tests here later if needed
+    # - name: Run tests
+    #   working-directory: ./nextjs_app
+    #   run: npm run test 
