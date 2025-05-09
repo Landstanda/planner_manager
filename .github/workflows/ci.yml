@@ -1,4 +1,4 @@
-name: Next.js CI
+name: Next.js CI/CD
 
 on:
   push:
@@ -40,4 +40,22 @@ jobs:
     # Add a step for tests here later if needed
     # - name: Run tests
     #   working-directory: ./nextjs_app
-    #   run: npm run test 
+    #   run: npm run test
+
+  deploy:
+    needs: build-and-lint  # Only run after build-and-lint succeeds
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'  # Only deploy on push to main
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Flyctl
+      uses: superfly/flyctl-actions/setup-flyctl@master
+
+    - name: Deploy to Fly.io
+      working-directory: ./nextjs_app
+      run: flyctl deploy --remote-only
+      env:
+        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }} 
