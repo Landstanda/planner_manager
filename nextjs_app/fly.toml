@@ -21,3 +21,7 @@ primary_region = "sjc"
   cpu_kind = "shared"
   cpus = 1
   memory_mb = 256 # You can adjust this based on your app's needs 
+
+[mounts]
+  source="chief_of_staff_data"
+  destination="/data" 
