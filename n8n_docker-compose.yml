@@ -1,0 +1,31 @@
+services:
+  n8n:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5678:5678"  # Expose only to the Pi itself initially
+    environment:
+      # Timezone setting
+      - GENERIC_TIMEZONE=America/Los_Angeles
+      # Allow external packages in Code nodes
+      - NODE_FUNCTION_ALLOW_EXTERNAL=epub,pdf.js-extract
+      # Python path and buffer settings
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/opt/venv/lib/python3.12/site-packages
+      - N8N_PYTHON_EXECUTABLE=/opt/venv/bin/python3
+      # Add the python community nodes to n8n
+      - N8N_COMMUNITY_NODES_ENABLED=true
+      - N8N_COMMUNITY_NODES=n8n-nodes-python-function
+    deploy:
+      resources:
+        limits:
+          memory: 2G  # Reduced since we don't need as much for just PDF processing
+        reservations:
+          memory: 512M
+    volumes:
+      # Data persistence
+      - n8n_data:/home/node/.n8n
+
+# Define the named volumes
+volumes:
+  n8n_data:

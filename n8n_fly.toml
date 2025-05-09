@@ -1,0 +1,30 @@
+# fly.toml app configuration file generated for aphro-email-manager on 2025-04-29T10:17:12-07:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'aphro-email-manager'
+primary_region = 'sjc'
+
+[build]
+  # image = 'node:18-alpine' # This is ignored when a Dockerfile is present
+
+[env]
+  GENERIC_TIMEZONE = "America/Los_Angeles"
+
+[http_service]
+  internal_port = 5678 # Changed from 8080 to n8n's default port
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+
+[mounts]
+  source = "n8n_data"
+  destination = "/home/node/.n8n"
