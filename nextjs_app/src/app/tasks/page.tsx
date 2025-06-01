@@ -144,14 +144,14 @@ export default function TasksPage() {
             {tasks.map((task) => (
               <div
                 key={task.id}
-                className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-md transition-shadow cursor-pointer"
+                className="bg-white rounded-lg border border-gray-200 p-6 hover:shadow-lg hover:border-gray-300 transition-all duration-200 cursor-pointer group"
                 onClick={() => window.open(`/tasks/${task.id}`, '_blank')}
               >
-                <div className="flex justify-between items-start mb-3">
-                  <h3 className="text-lg font-semibold text-gray-900 hover:text-blue-600">
+                <div className="flex justify-between items-start mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors leading-tight">
                     {task.title}
                   </h3>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-shrink-0 ml-4">
                     {task.priority && (
                       <span className={`px-2 py-1 text-xs font-medium rounded border ${getPriorityColor(task.priority)}`}>
                         P{task.priority}
@@ -163,28 +163,28 @@ export default function TasksPage() {
                   </div>
                 </div>
                 
-                <div className="flex justify-between items-center text-sm text-gray-600">
-                  <div className="flex gap-4">
-                    {task.projects && (
-                      <span>📁 {task.projects.name}</span>
-                    )}
-                    {task.est_duration && (
-                      <span>⏱️ {task.est_duration}m</span>
-                    )}
-                    {task.target_deadline && (
-                      <span>📅 {new Date(task.target_deadline).toLocaleDateString()}</span>
-                    )}
-                  </div>
-                  <span className="text-gray-400">
-                    {new Date(task.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-                
                 {task.description && (
-                  <p className="mt-3 text-gray-600 line-clamp-2">
+                  <p className="text-gray-600 line-clamp-2 mb-4 leading-relaxed">
                     {task.description}
                   </p>
                 )}
+                
+                <div className="flex justify-between items-center text-sm">
+                  <div className="flex gap-4 flex-wrap">
+                    {task.projects && (
+                      <span className="text-gray-600 font-medium">📁 {task.projects.name}</span>
+                    )}
+                    {task.est_duration && (
+                      <span className="text-gray-600">⏱️ {task.est_duration}m</span>
+                    )}
+                    {task.target_deadline && (
+                      <span className="text-gray-600">📅 {new Date(task.target_deadline).toLocaleDateString()}</span>
+                    )}
+                  </div>
+                  <span className="text-gray-400 text-xs">
+                    {new Date(task.created_at).toLocaleDateString()}
+                  </span>
+                </div>
               </div>
             ))}
           </div>
