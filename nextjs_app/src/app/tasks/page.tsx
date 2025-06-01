@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import type { Task } from '../../types/database'
 
 interface TaskWithProject extends Task {
@@ -18,7 +18,7 @@ export default function TasksPage() {
   const [sortBy, setSortBy] = useState('created_at')
   const [sortOrder, setSortOrder] = useState('desc')
 
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     try {
       setLoading(true)
       const response = await fetch(`/api/tasks?sortBy=${sortBy}&sortOrder=${sortOrder}`)
@@ -35,11 +35,11 @@ export default function TasksPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [sortBy, sortOrder])
 
   useEffect(() => {
     fetchTasks()
-  }, [sortBy, sortOrder])
+  }, [fetchTasks])
 
   const getPriorityColor = (priority: number | null) => {
     switch (priority) {
