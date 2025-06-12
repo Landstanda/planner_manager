@@ -1,0 +1,45 @@
+# Core FastAPI Framework
+fastapi
+uvicorn[standard]
+
+# Database & ORM
+sqlalchemy[asyncio]
+alembic
+asyncpg
+supabase
+
+# AI & ML (compatible versions)
+openai>=1.6.1
+langchain
+langchain-openai
+
+# Configuration & Environment
+python-dotenv
+pydantic
+pydantic-settings
+
+# Authentication & Security
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+
+# Vector Database
+pgvector
+
+# Logging & Monitoring
+structlog
+rich
+
+# Development & Testing
+pytest
+pytest-asyncio
+black
+isort
+
+# HTTP Clients
+httpx
+aiohttp
+
+# Date & Time
+python-dateutil
+pytz 
