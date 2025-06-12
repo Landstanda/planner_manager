@@ -50,6 +50,10 @@ This document serves as a comprehensive todo list for building the Daily Planner
 - [x] **Build task_creator workflow** (COMPLETED - can create tasks from natural language input)
 - [x] Document existing n8n deployment configuration
 - [x] Set up version control for n8n workflows (JSON exports)
+- [ ] **Build task_updater workflow** - Handle task status updates, completion, and modifications
+- [ ] **Build scheduler workflow** - Generate daily schedules and handle time-blocking logic
+- [ ] **Build chief workflow** - Main orchestration workflow for AI personality and decision-making
+- [ ] **Build instructions documenting workflow** - Process and update user personality profile and LLM instructions
 - [ ] Configure n8n REST API access for programmatic updates
 - [ ] Replace Slack Trigger in `main_planner.json` with a secured HTTP/Webhook trigger (e.g., Header Auth) for front-end integration, and document API key strategy
 - [ ] Update workflow documentation to reflect front-end integration
@@ -142,150 +146,327 @@ This document serves as a comprehensive todo list for building the Daily Planner
 - ✅ Comprehensive task detail pages with dependency navigation
 - ✅ Successfully deployed to production at https://chief-of-staff.fly.dev/
 
-## 6. Next.js Front-End - Additional Components (Post Task Interface)
+## 5.5. **PRIORITY: Intelligent Scheduling System** 🧠
+**Modular n8n workflows for dynamic task scheduling and real-time plan adaptation**
 
-- [x] Set up Next.js project with TypeScript and Tailwind
-- [x] Configure cloud-based development environment
-- [ ] Implement Next.js direct integration with Supabase:
-    - [x] Install and configure Supabase JS client (`@supabase/supabase-js`)
-    - [x] Secure environment variables for Supabase URL and anon key
-    - [ ] Implement user authentication (sign-up, login, session management) using Supabase Auth
-    - [ ] Refactor data fetching for reads (e.g., tasks, projects) to use direct Supabase queries (server-side or client-side with RLS)
-    - [ ] Implement real-time subscriptions for UI updates where beneficial (e.g., task list changes)
-    - [ ] Define and apply Row Level Security (RLS) policies in Supabase for data accessed directly by Next.js
-- [ ] Scaffold base layout with Tailwind & responsive design
-- [ ] Implement swipeable panels (To-Do List, Calendar/Daily Schedule, Life Folder) (as per `Front_End_Details.md`)
-- [ ] Implement bottom navigation bar (as per `Front_End_Details.md`)
-- [ ] Build Calendar/Daily Schedule component
-- [ ] Build Life Folder explorer powered by Drive API
-- [ ] Implement chat overlay (as per `Front_End_Details.md`)
-- [ ] Implement Personality On-Ramp Quiz (MVP)
-- [ ] Implement settings panel
-- [ ] Add PWA support and push notifications for reminders
-- [ ] Integrate authentication (Google OAuth)
+### Phase 1: Core Scheduling Decision Engines
+- [ ] **Step 1: Build Scheduler Decision Engine Workflow (`scheduler_decision_engine.json`)**
+    - [ ] Create input schema: task object + current schedule context + schedule template
+    - [ ] Implement decision matrix logic:
+        - [ ] Priority scoring algorithm (deadline urgency × priority × dl_hardness)
+        - [ ] Available time block analysis from schedule template
+        - [ ] Dependency checking (don't schedule if dependencies aren't complete)
+        - [ ] Current schedule density evaluation (avoid overloading days)
+    - [ ] Output: boolean decision + reasoning + suggested time window
+    - [ ] Add comprehensive logging for decision rationale
 
-## 7. Scheduling Engine (Business Logic) - Future
+- [ ] **Step 2: Build Time Block Allocator Workflow (`time_block_allocator.json`)**
+    - [ ] Create intelligent time slot selection logic:
+        - [ ] Find earliest suitable time block that fits task duration
+        - [ ] Respect user energy patterns from schedule template (focused work blocks, break times)
+        - [ ] Maintain 5-minute buffers between tasks (configurable)
+        - [ ] Consider task type vs. optimal time slots (creative work in morning, admin in afternoon)
+    - [ ] Implement conflict detection and resolution
+    - [ ] Add dependency validation (ensure prerequisite tasks are scheduled first)
+    - [ ] Output: specific datetime slot + potential conflicts + rationale
 
-- [ ] Design time-blocking algorithm with buffers and collision resolution (core of dynamic rescheduling and daily planning)
-- [ ] Implement algorithm as TypeScript library consumed by n8n & Next.js
-- [ ] Write unit tests covering edge cases (dependencies, delays, priority, conflicting preferences)
+- [ ] **Step 3: Build Reschedule Engine Workflow (`reschedule_engine.json`)**
+    - [ ] Create cascade rescheduling logic for when changes occur:
+        - [ ] Identify all tasks affected by a schedule change
+        - [ ] Re-evaluate available time blocks for each affected task
+        - [ ] Maintain priority ordering while minimizing total disruption
+        - [ ] Handle tasks that no longer fit (defer to next day with notification)
+    - [ ] Implement priority preservation (high priority tasks keep better time slots)
+    - [ ] Add boundary enforcement (respect work hours, lunch breaks, personal time)
+    - [ ] Create summary of all changes made with user-friendly explanations
 
-## 8. Personality & Feedback Loop - Future
+### Phase 2: Orchestration Workflows
+- [ ] **Step 4: Build Morning Planner Workflow (`morning_planner.json`)**
+    - [ ] Create daily planning orchestration:
+        - [ ] Fetch all unscheduled tasks with today's or overdue deadlines
+        - [ ] Get current schedule template and existing schedule for today
+        - [ ] Call Scheduler Decision Engine for each unscheduled task
+        - [ ] For tasks that should be scheduled, call Time Block Allocator
+        - [ ] Use Reschedule Engine to resolve any conflicts
+        - [ ] Generate comprehensive daily schedule with explanations
+    - [ ] Add user presentation logic (format schedule for UI display)
+    - [ ] Implement approval workflow (user can accept/modify before finalizing)
+    - [ ] Create fallback handling for overloaded days (suggest task deferrals)
 
-- [ ] Implement `user_llm_instructions` reader and prompt augmentation system (MVP - core to AI behavior)
-- [ ] Implement management style selection & initial set of tone templates based on archetypes (MVP)
-- [x] Implement Personality Assessment System (MVP):
-    - [x] Design and implement initial personality questionnaire (5-7 minutes)
-    - [x] Create scoring algorithm for questionnaire responses (5-point scales)
-    - [ ] Build assessment UI component in Next.js
-    - [ ] Implement assessment results storage in `user_personality_profile` table
-    - [ ] Create personality profile display/editing interface
-- [ ] Implement ongoing behavioral analysis for profile refinement
-- [ ] Integrate personality profile with AI prompt generation
-- [ ] Implement parsing of free-form input (chat/voice) for task structuring (MVP)
-- [ ] Logic for AI to propose breaking large tasks into subtasks with dependency links (post-MVP refinement)
-- [ ] AI logic for contextual suggestions during morning planning
-- [ ] AI logic for focus management/off-task intervention (Management Mode)
+- [ ] **Step 5: Build Dynamic Adjuster Workflow (`dynamic_adjuster.json`)**
+    - [ ] Handle real-time schedule changes:
+        - [ ] **Task Early Completion:** Free up time, check if other tasks can be pulled forward
+        - [ ] **Task Runs Late:** Assess impact on subsequent tasks, call Reschedule Engine
+        - [ ] **New Urgent Task:** Use Decision Engine + Allocator, then Reschedule existing tasks
+        - [ ] **Task Cancellation:** Free up time block, opportunity to advance other tasks
+    - [ ] Implement change impact assessment (show user what's affected)
+    - [ ] Add user notification system (explain changes and get approval if needed)
+    - [ ] Create undo functionality for unwanted automatic changes
 
-## 9. API Layer - Future
+### Phase 3: Integration & Intelligence
+- [ ] **Step 6: Enhance Scheduler with AI Decision Making**
+    - [ ] Integrate vector search for similar task scheduling patterns
+    - [ ] Add learning from user's scheduling preferences over time
+    - [ ] Implement smart defaults based on task type, project, and historical data
+    - [ ] Create personality-driven scheduling (aggressive packing vs. generous buffers)
 
-- [ ] Create Next.js API routes for schedule and chat (tasks routes covered in current focus)
-- [ ] Secure endpoints with JWT/session & CSRF protection
-- [ ] Integrate rate limiting and logging middleware
+- [ ] **Step 7: Connect Scheduling System to Task Management**
+    - [ ] Update task_creator.json to automatically trigger scheduling for new tasks
+    - [ ] Update task_updater.json to trigger Dynamic Adjuster for status changes
+    - [ ] Connect to mobile UI for real-time schedule updates
+    - [ ] Add webhook triggers for external calendar changes (future enhancement)
 
-## 10. Testing & Quality Assurance - Future
+- [ ] **Step 8: Build Scheduling Preferences Management**
+    - [ ] Create UI for managing schedule template (work hours, break times, energy patterns)
+    - [ ] Add scheduling rules management (no meetings Friday afternoons, morning focus blocks)
+    - [ ] Implement scheduling style preferences (tight packing vs. loose scheduling)
+    - [ ] Create override system for special scheduling requests
 
-- [ ] Add Jest & React Testing Library tests for UI components
-- [ ] Add integration tests for API routes
-- [ ] Add E2E tests with Playwright or Cypress
+### Phase 4: Advanced Features & Polish
+- [ ] **Step 9: Smart Conflict Resolution**
+    - [ ] Build intelligent meeting vs. task prioritization
+    - [ ] Add travel time calculation for location-based tasks
+    - [ ] Implement recurring task scheduling logic
+    - [ ] Create deadline negotiation suggestions (task won't fit, suggest deadline extension)
 
-## 11. Documentation ✅
+- [ ] **Step 10: Scheduling Analytics & Optimization**
+    - [ ] Track scheduling accuracy (planned vs. actual completion times)
+    - [ ] Identify patterns in task duration estimates vs. reality
+    - [ ] Build recommendations for better time estimation
+    - [ ] Create scheduling efficiency reports for user feedback
 
-- [x] Extend README with detailed setup & usage instructions (initial pass done, will need ongoing updates)
-- [x] Create architecture diagram assets (initial ASCII in README, can be improved)
-- [x] Create User Experience (`User_Experience.md`) document
-- [x] Create Front-End Details (`Front_End_Details.md`) document
-- [ ] Document n8n workflows and API endpoints
+**🎯 Success Criteria:**
+- ✅ Can automatically plan an entire day from unscheduled tasks
+- ✅ Handles urgent task insertion without breaking existing schedule
+- ✅ Adapts to early/late task completion in real-time
+- ✅ Respects user preferences and boundaries consistently
+- ✅ Provides clear rationale for all scheduling decisions
+- ✅ Maintains schedule quality under various disruption scenarios
 
-## 12. Optional Add-Ons (Post-MVP)
+**📋 Dependencies:**
+- Requires completed task_updater.json for status change triggers
+- Needs schedule and schedule_template tables properly populated
+- UI integration for schedule display and user approval workflows
 
-- [ ] Implement Automated Life Folder Extractor (scans chats to update Supabase `User_Info` table etc.)
-- [ ] Implement Secure Vault (requires crypto design)
-- [ ] Implement Pomodoro Timer module
-- [ ] Implement Habit Tracker module
-- [ ] Implement Gamified To-Do module
-- [ ] Implement Life Coach Mode
-- [ ] Implement Astrologer Plugin
+## 6. **NEXT PRIORITY: Core Chief-of-Flow UI Framework** 🎯
+**📱 MOBILE-FIRST DESIGN: Optimized primarily for smartphone use with minimalist, thumb-friendly interface**
 
-### Future n8n Workflows (Post-MVP)
-- [ ] Build Morning Kickoff / Daily Planning workflow
-- [ ] Build Database Trigger/Webhook workflow (for Master To-Do changes in Supabase)
-- [ ] Build Calendar Update webhook workflow (for real-time event changes)
-- [ ] Build End-of-Day Retro workflow
-- [ ] Build `Memory/Instructions.md` Ingestion Workflow
-- [ ] Implement Dynamic Rescheduling logic within relevant workflows
-- [ ] Implement Management Mode / Progress Check-in logic
-- [ ] Add unit tests / mock executions for all workflows
-- [ ] Create workflow deployment script using n8n API
+### Phase 1: Three-Panel Mobile Layout Foundation
+- [ ] **Step 1: Implement Mobile-First Base Layout Structure**
+    - [ ] Create main layout component optimized for smartphone screens (320px-428px width priority)
+    - [ ] Implement three swipeable panels with smooth touch gestures (as per `Front_End_Details.md`)
+    - [ ] Design bottom navigation bar with large, thumb-accessible touch targets (minimum 44px)
+    - [ ] Ensure single-thumb usability for primary interactions
+    - [ ] Add haptic feedback for panel switching and interactions
+
+- [ ] **Step 2: Refactor Task Interface into Mobile Panel System**
+    - [ ] Move existing task list functionality into mobile-optimized "To-Do List View" panel
+    - [ ] Redesign task cards for mobile: larger touch targets, simplified information hierarchy
+    - [ ] Update routing to work within mobile panel system with gesture navigation
+    - [ ] Implement mobile-appropriate project color-coding using orange/blue/lavender scheme
+    - [ ] Add pull-to-refresh functionality
+
+- [ ] **Step 3: Implement Mobile "Ask me stuff..." Chat Input**
+    - [ ] Create floating input field optimized for mobile keyboards (as per `UI_Style_Guide.md`)
+    - [ ] Design as thumb-accessible rounded pill with prominent blue microphone icon
+    - [ ] Add expand-to-fullscreen-chat functionality for mobile conversation
+    - [ ] Implement native mobile voice input with visual feedback
+    - [ ] Ensure keyboard doesn't obscure input when typing
+
+### Phase 2: Calendar/Daily Schedule Panel
+- [ ] **Step 4: Build Mobile Schedule View Component**
+    - [ ] Create mobile-optimized daily schedule view panel
+    - [ ] Implement touch-friendly time-blocked schedule display with clear project labels
+    - [ ] Design mobile-appropriate day/week toggle (month view as simple overview)
+    - [ ] Show persistent preference blocks (lunch, work hours) as reserved mobile-friendly cards
+    - [ ] Optimize for portrait orientation with vertical scrolling
+
+- [ ] **Step 5: Add Mobile Interactive Schedule Features**
+    - [ ] Implement touch drag-and-drop time block rescheduling optimized for mobile
+    - [ ] Add finger-friendly duration adjustment by dragging block edges
+    - [ ] Create clear visual conflict detection with mobile-appropriate indicators
+    - [ ] Add simple tap-to-create/long-press-to-delete time block functionality
+    - [ ] Ensure all interactions work with thumbs and single-hand operation
+
+- [ ] **Step 6: Integrate Mobile Schedule with Task Data**
+    - [ ] Connect calendar blocks to tasks with mobile-optimized task detail modals
+    - [ ] Display condensed task information within mobile time blocks
+    - [ ] Allow drag-from-panel scheduling (To-Do panel to Calendar panel)
+    - [ ] Implement mobile-friendly scheduling logic with clear 5-minute buffer visualization
+
+### Phase 3: Life Folder Panel
+- [ ] **Step 7: Build Mobile Life Folder Explorer**
+    - [ ] Create mobile-optimized file-explorer interface for Google Drive "Life Folder"
+    - [ ] Implement touch-friendly folder navigation (Inbox, Goals, Projects, Memory)
+    - [ ] Add mobile document viewing with pinch-to-zoom and proper text scaling
+    - [ ] Create thumb-friendly quick editing interface for document updates
+    - [ ] Optimize for one-handed browsing and editing
+
+- [ ] **Step 8: Integrate Mobile Personality System Interface**
+    - [ ] Connect to Supabase tables with mobile-optimized loading states
+    - [ ] Create mobile-friendly UI for viewing/editing personality settings
+    - [ ] Implement simple, thumb-accessible instructions management interface
+    - [ ] Show personality-driven customizations in mobile UI (subtle color accents, compact AI avatars)
+    - [ ] Ensure settings are accessible without overwhelming the mobile interface
+
+## 7. **AI Integration & Personality System** 🤖
+
+### Phase 1: Mobile Personality On-Ramp
+- [ ] **Step 1: Build Mobile Personality Assessment Quiz**
+    - [ ] Create mobile-optimized quiz component with clear progress indicator
+    - [ ] Implement 5-7 minute questionnaire covering 5 core indicators from README
+    - [ ] Design engaging, thumb-friendly multiple-choice questions for mobile
+    - [ ] Store results in `user_personality_profile` table
+    - [ ] Ensure quiz works seamlessly in portrait mode
+
+- [ ] **Step 2: Mobile Personality Results & Customization**
+    - [ ] Create mobile-friendly results page introducing AI assistant persona
+    - [ ] Implement simple, touch-optimized personality adjustment sliders
+    - [ ] Add mobile tone/style preview functionality with clear examples
+    - [ ] Connect personality settings to AI behavior throughout mobile app
+    - [ ] Design compact, non-overwhelming settings interface
+
+### Phase 2: Mobile Chat Interface & AI Integration
+- [ ] **Step 3: Build Mobile Chat Overlay System**
+    - [ ] Create mobile-optimized GPT-style chat bubble overlay
+    - [ ] Implement mobile conversational UI with proper keyboard handling
+    - [ ] Add compact AI avatar that reflects chosen personality
+    - [ ] Include mobile-friendly interactive elements (large Accept/Reject buttons, quick replies)
+    - [ ] Ensure chat works in both portrait and landscape orientations
+
+- [ ] **Step 4: Connect Mobile App to n8n Workflows**
+    - [ ] Integrate with n8n task_creator, task_updater, scheduler, and chief workflows
+    - [ ] Implement natural language task creation optimized for mobile typing/voice
+    - [ ] Add real-time task processing with mobile-appropriate loading indicators
+    - [ ] Create mobile error handling for workflow failures with clear retry options
+
+- [ ] **Step 5: Advanced Mobile AI Features**
+    - [ ] Implement mobile task suggestion system with swipe-to-accept/dismiss
+    - [ ] Add AI-powered task breakdown with mobile-friendly visual hierarchy
+    - [ ] Create contextual suggestions during mobile daily planning flow
+    - [ ] Implement mobile focus management with gentle, non-intrusive interventions
+
+## 8. **Scheduling Engine & Daily Planning** 📅
+
+### Phase 1: Morning Kickoff Routine
+- [ ] **Step 1: Build Morning Planning Interface**
+    - [ ] Create morning kickoff flow with personalized greeting
+    - [ ] Implement calendar review and task pulling from Task DB
+    - [ ] Add project drill-down with contextual suggestions
+    - [ ] Build proposed schedule generation
+
+- [ ] **Step 2: Schedule Review & Adjustment**
+    - [ ] Create accept/adjust/reject interface for proposed plans
+    - [ ] Implement natural language schedule modification
+    - [ ] Add conflict resolution with user preference consideration
+    - [ ] Build rationale explanation system for AI decisions
+
+### Phase 2: Dynamic Rescheduling
+- [ ] **Step 3: Real-time Schedule Adaptation**
+    - [ ] Implement task completion monitoring
+    - [ ] Add automatic schedule updates for early/late completions
+    - [ ] Create new priority insertion logic
+    - [ ] Build conflict resolution algorithms
+
+- [ ] **Step 4: Management Mode Check-ins**
+    - [ ] Implement progress check-in system tuned to personality
+    - [ ] Add off-task detection and intervention
+    - [ ] Create motivational prompts based on user's management style
+    - [ ] Build sacrifice vs. priorities awareness system
+
+## 9. **Authentication & User Management** 👤
+
+### Phase 1: Authentication Setup
+- [ ] **Step 1: Implement Supabase Auth**
+    - [ ] Set up Google OAuth integration
+    - [ ] Create sign-up/login flows
+    - [ ] Implement session management
+    - [ ] Add protected route middleware
+
+- [x] **Step 2: Row Level Security**
+    - [x] Define RLS policies for all user data tables
+    - [x] Implement user-specific data filtering
+    - [x] Test multi-user data isolation
+    - [x] Add user profile management
+
+## 10. **Advanced Features & Polish** ✨
+
+### Phase 1: Real-time Features
+- [ ] **Step 1: Supabase Real-time Integration**
+    - [ ] Implement real-time task updates
+    - [ ] Add live schedule synchronization
+    - [ ] Create collaborative features foundation
+    - [ ] Build notification system
+
+### Phase 2: PWA & Mobile Features
+- [ ] **Step 2: Progressive Web App Setup**
+    - [ ] Configure PWA manifest and service worker
+    - [ ] Add offline functionality for core features
+    - [ ] Implement push notifications for reminders
+    - [ ] Optimize for mobile performance
+
+### Phase 3: Google Calendar Integration
+- [ ] **Step 3: External Calendar Sync**
+    - [ ] Integrate with Google Calendar API
+    - [ ] Implement two-way sync for calendar events
+    - [ ] Add calendar event styling and categorization
+    - [ ] Build conflict resolution between internal and external events
+
+## 11. **Testing & Quality Assurance** ✅
+
+- [ ] **Unit Testing**
+    - [ ] Add Jest & React Testing Library tests for UI components
+    - [ ] Test API routes and data fetching
+    - [ ] Cover personality system and scheduling logic
+
+- [ ] **Integration Testing**
+    - [ ] Test end-to-end user flows
+    - [ ] Verify n8n workflow integration
+    - [ ] Test real-time features and notifications
+
+- [ ] **Performance Testing**
+    - [ ] Optimize bundle size and loading performance
+    - [ ] Test on various devices and network conditions
+    - [ ] Implement performance monitoring
+
+## 12. **Documentation & Deployment** 📚
+
+- [x] Create comprehensive documentation (`README.md`, `User_Experience.md`, `Front_End_Details.md`, `UI_Style_Guide.md`)
+- [ ] Document API endpoints and n8n workflow integration
+- [ ] Create user onboarding guide
+- [ ] Build developer setup instructions
+- [ ] Add architectural decision records (ADRs)
+
+## 13. **Optional Advanced Features** (Post-MVP)
+
+- [ ] **Life Folder Automation:** AI scans chats to update user data
+- [ ] **Habit Tracking:** Daily habit integration with scheduling
+- [ ] **Pomodoro Timer:** Focus session management
+- [ ] **Voice Commands:** Advanced voice interaction beyond input
+- [ ] **Analytics Dashboard:** Productivity insights and trends
+- [ ] **Team Features:** Shared projects and collaborative planning
+- [ ] **Third-party Integrations:** Slack, Notion, Todoist, etc.
 
 ---
 
-## **COMPLETED SPRINT: Task Interface UI Development** ✅
+## **CURRENT STATUS: Ready for Next Sprint** 🚀
 
-**🎯 GOAL ACHIEVED:** Complete the Task Interface UI (Section 5) to provide users with a functional way to view, sort, and interact with tasks stored in the Supabase database.
+**🎯 IMMEDIATE NEXT STEP:** Section 6 - Core Chief-of-Flow UI Framework
 
-**✅ SUCCESS CRITERIA MET:**
-- ✅ Users can view all tasks from Supabase database
-- ✅ Tasks can be sorted by multiple criteria via dropdown
-- ✅ Clicking a task shows full details with enhanced dependency navigation
-- ✅ Interface is responsive and follows modern UI principles
-- ✅ Successfully deployed to Fly.io at https://chief-of-staff.fly.dev/
+**Why this order?**
+1. **Mobile Foundation First:** Build the three-panel mobile system that defines the app experience
+2. **Complete n8n Workflows:** Finish task_updater, scheduler, chief, and instructions workflows for full backend functionality
+3. **User Experience:** Create the mobile interaction model users will actually use daily
+4. **AI Integration:** Connect the beautiful mobile UI to intelligent backend
+5. **Advanced Features:** Add polish and power-user features
 
----
+**Success Criteria for Next Sprint:**
+- ✅ Mobile-optimized three swipeable panels (To-Do, Calendar, Life Folder) with thumb-friendly navigation
+- ✅ "Ask me stuff..." mobile chat input with voice capability and keyboard optimization
+- ✅ Mobile calendar view with touch-friendly time-blocking
+- ✅ Mobile Life Folder navigation optimized for one-handed use
+- ✅ Orange/blue/lavender design system implemented for mobile screens
+- ✅ All core n8n workflows completed (task_updater, scheduler, chief, instructions)
 
-## **NEXT SPRINT OPTIONS** 🚀
-
-Choose your next development focus:
-
-### Option A: Task Creation & Management 📝
-**Goal:** Add the ability to create, edit, and manage tasks directly from the UI
-- [ ] Build task creation form with all schema fields
-- [ ] Implement task editing capabilities
-- [ ] Add task deletion with confirmation
-- [ ] Create project management interface
-- [ ] Add bulk task operations
-
-### Option B: Real-time Features & Advanced UI 🔄
-**Goal:** Enhance the user experience with real-time updates and advanced features
-- [ ] Implement Supabase real-time subscriptions for live task updates
-- [ ] Add search functionality across tasks
-- [ ] Implement advanced filtering (by tags, date ranges, etc.)
-- [ ] Add drag-and-drop task reordering
-- [ ] Create task templates and quick actions
-
-### Option C: Calendar & Scheduling Integration 📅
-**Goal:** Build the calendar/daily schedule component for time-blocking
-- [ ] Create calendar view component
-- [ ] Implement time-blocking algorithm
-- [ ] Add task scheduling to calendar slots
-- [ ] Build daily planning interface
-- [ ] Integrate with Google Calendar API
-
-### Option D: AI Integration & Chat Interface 🤖
-**Goal:** Connect the front-end to n8n workflows and add AI-powered features
-- [ ] Build chat overlay for natural language task creation
-- [ ] Integrate with n8n task_creator workflow
-- [ ] Add AI-powered task suggestions
-- [ ] Implement voice input for task creation
-- [ ] Create AI assistant personality interface
-
-### Option E: Authentication & User Management 👤
-**Goal:** Add user authentication and multi-user support
-- [ ] Implement Supabase Auth (Google OAuth)
-- [ ] Add user registration and login flows
-- [ ] Implement Row Level Security (RLS) policies
-- [ ] Create user profile management
-- [ ] Add user-specific task filtering
-
-**Recommended Next Step:** Option A (Task Creation & Management) - This would complete the core CRUD operations and make the app fully functional for task management.
+This progression ensures we build a cohesive, mobile-first application that embodies the Chief-of-Flow vision optimized for smartphone use, rather than a collection of disconnected features.
    

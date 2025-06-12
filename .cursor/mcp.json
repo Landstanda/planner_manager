@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "@supabase/mcp-server",
+        "--access-token",
+        "sbp_25ecea19edf75471b3cf3bb3b09fa444d346c443"
+      ]
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "brave-search-mcp"
+      ],
+      "env": {
+        "BRAVE_API_KEY": "BSA1yoSYv__AxQ7hzE0Xg1kpEKrreQ1"
+      }
+    }
+  }
+}

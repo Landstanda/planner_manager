@@ -1,0 +1,399 @@
+{
+    "nodes": [
+      {
+        "parameters": {
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+        "typeVersion": 1.1,
+        "position": [
+          -160,
+          380
+        ],
+        "id": "chat-trigger-node",
+        "name": "When chat message received",
+        "webhookId": "time-block-allocator-webhook"
+      },
+      {
+        "parameters": {
+          "inputSource": "passthrough"
+        },
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.1,
+        "position": [
+          -160,
+          520
+        ],
+        "id": "workflow-trigger-node",
+        "name": "When Called by Another Workflow"
+      },
+      {
+        "parameters": {
+          "operation": "getAll",
+          "tableId": "schedule",
+          "filterType": "manual",
+          "conditions": {
+            "conditions": [
+              {
+                "keyName": "scheduled_date",
+                "condition": "gte",
+                "keyValue": "={{ new Date().toISOString().split('T')[0] }}"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          20,
+          380
+        ],
+        "id": "get-current-schedule-node",
+        "name": "Get Current Schedule",
+        "credentials": {
+          "supabaseApi": {
+            "id": "IeWFpcXPM3QZKyFx",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "getAll",
+          "tableId": "schedule_template",
+          "filterType": "none"
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          20,
+          520
+        ],
+        "id": "get-schedule-template-node",
+        "name": "Get Schedule Template",
+        "credentials": {
+          "supabaseApi": {
+            "id": "IeWFpcXPM3QZKyFx",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Process input data for time block allocation\nconst scheduleItems = $('Get Current Schedule').all();\nconst templateItems = $('Get Schedule Template').all();\n\n// Get the task and scheduling decision from trigger input\nlet triggerData;\ntry {\n  triggerData = $('When chat message received').first().json;\n} catch (e) {\n  try {\n    triggerData = $('When Called by Another Workflow').first().json;\n  } catch (e2) {\n    triggerData = { task: null, schedulingDecision: null };\n  }\n}\n\nconst taskToSchedule = triggerData.task;\nconst schedulingDecision = triggerData.schedulingDecision;\n\n// Process current schedule - convert to time slots\nconst currentSchedule = scheduleItems.map(item => {\n  const schedule = item.json;\n  return {\n    id: schedule.id,\n    task_id: schedule.task_id,\n    scheduled_date: schedule.scheduled_date,\n    start_time: schedule.start_time,\n    end_time: schedule.end_time,\n    status: schedule.status\n  };\n});\n\n// Process schedule template - available time blocks\nconst scheduleTemplate = templateItems.map(item => {\n  const template = item.json;\n  return {\n    id: template.id,\n    day_of_week: template.day_of_week,\n    start_time: template.start_time,\n    end_time: template.end_time,\n    block_type: template.block_type,\n    description: template.description,\n    priority_for_type: template.priority_for_type || 1\n  };\n});\n\n// Calculate available time slots for today and next few days\nfunction generateAvailableSlots(templateBlocks, currentSchedule, daysAhead = 3) {\n  const availableSlots = [];\n  \n  for (let dayOffset = 0; dayOffset <= daysAhead; dayOffset++) {\n    const targetDate = new Date();\n    targetDate.setDate(targetDate.getDate() + dayOffset);\n    const dateStr = targetDate.toISOString().split('T')[0];\n    const dayOfWeek = targetDate.getDay();\n    \n    // Get template blocks for this day\n    const dayTemplateBlocks = templateBlocks.filter(block => \n      block.day_of_week === dayOfWeek || block.day_of_week === null\n    );\n    \n    // Get existing schedule for this day\n    const daySchedule = currentSchedule.filter(s => s.scheduled_date === dateStr);\n    \n    // Find gaps in the schedule\n    for (const templateBlock of dayTemplateBlocks) {\n      if (templateBlock.block_type === 'available') {\n        // Check if this block is available (not conflicting with existing schedule)\n        const hasConflict = daySchedule.some(scheduled => {\n          return !(scheduled.end_time <= templateBlock.start_time || \n                  scheduled.start_time >= templateBlock.end_time);\n        });\n        \n        if (!hasConflict) {\n          availableSlots.push({\n            date: dateStr,\n            start_time: templateBlock.start_time,\n            end_time: templateBlock.end_time,\n            block_type: templateBlock.block_type,\n            description: templateBlock.description,\n            duration_minutes: calculateDuration(templateBlock.start_time, templateBlock.end_time),\n            day_offset: dayOffset\n          });\n        }\n      }\n    }\n  }\n  \n  return availableSlots;\n}\n\nfunction calculateDuration(startTime, endTime) {\n  const start = new Date(`2000-01-01T${startTime}`);\n  const end = new Date(`2000-01-01T${endTime}`);\n  return (end - start) / (1000 * 60); // minutes\n}\n\nconst availableSlots = generateAvailableSlots(scheduleTemplate, currentSchedule);\n\n// Filter slots that can fit the task duration (with 10-minute buffer)\nconst taskDuration = taskToSchedule?.est_duration || 60;\nconst requiredDuration = taskDuration + 10; // 10-minute buffer\n\nconst suitableSlots = availableSlots.filter(slot => \n  slot.duration_minutes >= requiredDuration\n);\n\nreturn [{\n  json: {\n    taskToSchedule: taskToSchedule,\n    schedulingDecision: schedulingDecision,\n    currentSchedule: currentSchedule,\n    scheduleTemplate: scheduleTemplate,\n    availableSlots: availableSlots,\n    suitableSlots: suitableSlots,\n    requiredDuration: requiredDuration,\n    context: {\n      totalAvailableSlots: availableSlots.length,\n      totalSuitableSlots: suitableSlots.length,\n      taskDuration: taskDuration\n    }\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          200,
+          450
+        ],
+        "id": "analyze-time-slots-node",
+        "name": "Analyze Available Time Slots"
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "=Task to Schedule: {{ $json.taskToSchedule }}\n\nScheduling Decision Context: {{ $json.schedulingDecision }}\n\nSuitable Time Slots: {{ $json.suitableSlots }}\n\nRequired Duration: {{ $json.requiredDuration }} minutes\n\nContext: {{ $json.context }}",
+          "hasOutputParser": true,
+          "options": {
+            "systemMessage": "You are an expert time block allocator for a personal AI assistant. Your job is to select the optimal time slot for a task that has already been approved for scheduling.\n\n**Your Allocation Criteria:**\n\n1. **Earliest Suitable Time:**\n   - Prefer earlier available slots for urgent tasks\n   - Consider day_offset (0=today, 1=tomorrow, etc.)\n   - Balance urgency with realistic scheduling\n\n2. **Block Type Optimization:**\n   - Match task type to optimal time blocks:\n     * Creative/Focus work: morning slots preferred\n     * Administrative tasks: afternoon slots acceptable\n     * Meetings/Calls: any available slot\n     * Deep work: longer uninterrupted blocks\n\n3. **Duration Fit:**\n   - Ensure selected slot has adequate time (task duration + 10min buffer)\n   - Prefer slots that are not excessively long for short tasks\n   - Consider breaking large tasks across multiple slots if needed\n\n4. **Energy and Context:**\n   - Morning slots for high-energy work\n   - Post-lunch slots for routine tasks\n   - Late afternoon for administrative work\n\n5. **Conflict Avoidance:**\n   - Only select from pre-filtered suitable slots\n   - Ensure 5-10 minute buffers around existing commitments\n\n**Allocation Output Format:**\nReturn ONLY a JSON object with this exact structure:\n\n```json\n{\n  \"allocated\": true,\n  \"selected_slot\": {\n    \"date\": \"2024-01-15\",\n    \"start_time\": \"09:00:00\",\n    \"end_time\": \"10:30:00\",\n    \"duration_minutes\": 90\n  },\n  \"allocation_reasoning\": \"Selected morning focus block for high-priority creative task. Optimal energy time with no conflicts.\",\n  \"confidence\": 92,\n  \"buffer_before\": 5,\n  \"buffer_after\": 10,\n  \"optimization_factors\": {\n    \"urgency_priority\": 8,\n    \"time_slot_quality\": 9,\n    \"energy_match\": 9,\n    \"duration_fit\": 8\n  },\n  \"alternative_slots\": [\n    {\n      \"date\": \"2024-01-15\",\n      \"start_time\": \"14:00:00\",\n      \"end_time\": \"15:30:00\",\n      \"reason_not_selected\": \"Later in day, lower energy for creative work\"\n    }\n  ],\n  \"schedule_impact\": \"minimal\",\n  \"next_steps\": [\"update_schedule_table\", \"notify_user\"]\n}\n```\n\n**Field Definitions:**\n- `allocated`: boolean - whether allocation was successful\n- `selected_slot`: object - the chosen time slot details\n- `allocation_reasoning`: string - why this slot was chosen\n- `confidence`: 1-100 - confidence in this allocation choice\n- `buffer_before/after`: minutes - recommended buffers\n- `optimization_factors`: object - scores for different factors\n- `alternative_slots`: array - other viable options with reasons\n- `schedule_impact`: \"minimal\"|\"moderate\"|\"significant\"\n- `next_steps`: array - what actions should follow\n\n**Decision Rules:**\n1. If no suitable slots available, set allocated: false\n2. Prefer today for urgent tasks (day_offset: 0)\n3. Consider task priority when choosing between multiple good slots\n4. Optimize for user's energy patterns (creative work in AM)\n5. Maintain realistic buffers for transitions\n\n**Response Format:**\nReturn ONLY the JSON object. No additional text or explanation outside the JSON."
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 1.9,
+        "position": [
+          400,
+          450
+        ],
+        "id": "time-allocation-agent",
+        "name": "Time Allocation Agent"
+      },
+      {
+        "parameters": {
+          "model": {
+            "__rl": true,
+            "value": "gpt-4.1",
+            "mode": "list",
+            "cachedResultName": "gpt-4.1"
+          },
+          "options": {
+            "temperature": 0.3
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "typeVersion": 1.2,
+        "position": [
+          600,
+          650
+        ],
+        "id": "openai-model-node",
+        "name": "OpenAI Model",
+        "credentials": {
+          "openAiApi": {
+            "id": "adOJRYPMvbKwB0LQ",
+            "name": "OpenAi account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Parse and validate the time allocation decision\nconst allocationOutput = JSON.parse($('Time Allocation Agent').item.json.output);\n\n// Add metadata and prepare final allocation result\nconst allocation = {\n  ...allocationOutput,\n  timestamp: new Date().toISOString(),\n  workflow_version: \"time_block_allocator_v1.0\",\n  input_task: $('Analyze Available Time Slots').item.json.taskToSchedule,\n  allocation_context: {\n    total_suitable_slots: $('Analyze Available Time Slots').item.json.context.totalSuitableSlots,\n    required_duration: $('Analyze Available Time Slots').item.json.requiredDuration\n  }\n};\n\n// Validate allocation result\nif (allocation.allocated && !allocation.selected_slot) {\n  throw new Error(\"Allocation marked as successful but no slot selected\");\n}\n\n// Ensure confidence is between 1-100\nif (allocation.confidence < 1 || allocation.confidence > 100) {\n  allocation.confidence = Math.max(1, Math.min(100, allocation.confidence));\n}\n\n// Prepare schedule entry data if allocation was successful\nlet scheduleEntry = null;\nif (allocation.allocated && allocation.selected_slot) {\n  scheduleEntry = {\n    task_id: allocation.input_task.id,\n    scheduled_date: allocation.selected_slot.date,\n    start_time: allocation.selected_slot.start_time,\n    end_time: allocation.selected_slot.end_time,\n    status: 'scheduled',\n    created_by: 'time_block_allocator',\n    notes: allocation.allocation_reasoning\n  };\n}\n\nreturn [{\n  json: {\n    allocation: allocation,\n    scheduleEntry: scheduleEntry,\n    success: allocation.allocated,\n    workflow: \"time_block_allocator\"\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          600,
+          450
+        ],
+        "id": "process-allocation-node",
+        "name": "Process Allocation Result"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "allocation-success-condition",
+                "leftValue": "={{ $json.success }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "equal"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          800,
+          450
+        ],
+        "id": "check-allocation-success",
+        "name": "Allocation Successful?"
+      },
+      {
+        "parameters": {
+          "tableId": "schedule",
+          "fieldsUi": {
+            "fieldValues": [
+              {
+                "fieldId": "task_id",
+                "fieldValue": "={{ $json.scheduleEntry.task_id }}"
+              },
+              {
+                "fieldId": "scheduled_date",
+                "fieldValue": "={{ $json.scheduleEntry.scheduled_date }}"
+              },
+              {
+                "fieldId": "start_time",
+                "fieldValue": "={{ $json.scheduleEntry.start_time }}"
+              },
+              {
+                "fieldId": "end_time",
+                "fieldValue": "={{ $json.scheduleEntry.end_time }}"
+              },
+              {
+                "fieldId": "status",
+                "fieldValue": "={{ $json.scheduleEntry.status }}"
+              },
+              {
+                "fieldId": "notes",
+                "fieldValue": "={{ $json.scheduleEntry.notes }}"
+              }
+            ]
+          }
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          1000,
+          350
+        ],
+        "id": "create-schedule-entry",
+        "name": "Create Schedule Entry",
+        "credentials": {
+          "supabaseApi": {
+            "id": "IeWFpcXPM3QZKyFx",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Handle allocation failure - return result with failure reasons\nconst allocationResult = $('Process Allocation Result').item.json;\n\nreturn [{\n  json: {\n    ...allocationResult,\n    message: \"Task allocation failed - no suitable time slots available\",\n    recommendedActions: [\n      \"Consider extending deadline\",\n      \"Break task into smaller subtasks\", \n      \"Reschedule existing lower-priority tasks\",\n      \"Add more available time blocks to schedule template\"\n    ]\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1000,
+          550
+        ],
+        "id": "handle-allocation-failure",
+        "name": "Handle Allocation Failure"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Finalize successful allocation with confirmation\nconst allocationResult = $('Process Allocation Result').item.json;\nconst scheduleResult = $('Create Schedule Entry').item.json;\n\nreturn [{\n  json: {\n    ...allocationResult,\n    scheduleId: scheduleResult.id,\n    message: `Task successfully scheduled for ${allocationResult.allocation.selected_slot.date} at ${allocationResult.allocation.selected_slot.start_time}`,\n    scheduledEntry: scheduleResult\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1200,
+          350
+        ],
+        "id": "finalize-allocation",
+        "name": "Finalize Successful Allocation"
+      },
+      {
+        "parameters": {
+          "content": "## Time Block Allocator\n\nThis workflow finds the optimal time slot for a task that has been approved for scheduling.\n\n**Input:** Task + scheduling decision context\n\n**Allocation Logic:**\n- Find suitable time slots from template\n- Consider task type vs optimal timing\n- Ensure adequate duration + buffers\n- Optimize for energy and workflow\n\n**Output:** Specific time slot + schedule entry\n\n**Used By:**\n- Morning Planner workflow\n- Dynamic Adjuster workflow",
+          "height": 400,
+          "width": 600,
+          "color": 4
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -200,
+          200
+        ],
+        "id": "workflow-description-note",
+        "name": "Workflow Description"
+      }
+    ],
+    "connections": {
+      "When chat message received": {
+        "main": [
+          [
+            {
+              "node": "Get Current Schedule",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "When Called by Another Workflow": {
+        "main": [
+          [
+            {
+              "node": "Get Current Schedule",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Current Schedule": {
+        "main": [
+          [
+            {
+              "node": "Get Schedule Template",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Schedule Template": {
+        "main": [
+          [
+            {
+              "node": "Analyze Available Time Slots",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Analyze Available Time Slots": {
+        "main": [
+          [
+            {
+              "node": "Time Allocation Agent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Time Allocation Agent": {
+        "main": [
+          [
+            {
+              "node": "Process Allocation Result",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Process Allocation Result": {
+        "main": [
+          [
+            {
+              "node": "Allocation Successful?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Allocation Successful?": {
+        "main": [
+          [
+            {
+              "node": "Create Schedule Entry",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Handle Allocation Failure",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Create Schedule Entry": {
+        "main": [
+          [
+            {
+              "node": "Finalize Successful Allocation",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "OpenAI Model": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "Time Allocation Agent",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "meta": {
+      "templateCredsSetupCompleted": true,
+      "instanceId": "time-block-allocator-workflow"
+    }
+  }

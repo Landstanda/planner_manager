@@ -1,0 +1,423 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        760,
+        1100
+      ],
+      "id": "61a5ebed-d225-4270-a32b-5bc6c2f6b0d9",
+      "name": "When Called by Another Workflow"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "schedule"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        720
+      ],
+      "id": "fb1ee00a-1391-47fc-8807-a1da96de3a77",
+      "name": "Get Current Schedule",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IeWFpcXPM3QZKyFx",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "schedule_template",
+        "filterType": "none"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        880
+      ],
+      "id": "13ba34ee-c810-45db-8da0-68571b65bf22",
+      "name": "Get Schedule Template",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IeWFpcXPM3QZKyFx",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "tasks"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        1040
+      ],
+      "id": "3020b343-12cf-42e9-ac4a-32dfb698b65b",
+      "name": "Get Active Tasks",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IeWFpcXPM3QZKyFx",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process input data for scheduling decision\nconst scheduleItems = $('Get Current Schedule').all();\nconst templateItems = $('Get Schedule Template').all();\nconst activeTaskItems = $('Get Active Tasks').all();\n\n// Get the task to evaluate (from trigger input)\nlet triggerData;\ntry {\n  triggerData = $('When chat message received').first().json;\n} catch (e) {\n  try {\n    triggerData = $('When Called by Another Workflow').first().json;\n  } catch (e2) {\n    triggerData = { task: null, context: 'No task provided' };\n  }\n}\n\n// Extract task information\nconst taskToEvaluate = triggerData.task || triggerData.chatInput || null;\n\n// Process current schedule\nconst currentSchedule = scheduleItems.map(item => {\n  const schedule = item.json;\n  return {\n    id: schedule.id,\n    task_id: schedule.task_id,\n    scheduled_date: schedule.scheduled_date,\n    start_time: schedule.start_time,\n    end_time: schedule.end_time,\n    status: schedule.status\n  };\n});\n\n// Process schedule template\nconst scheduleTemplate = templateItems.map(item => {\n  const template = item.json;\n  return {\n    id: template.id,\n    day_of_week: template.day_of_week,\n    start_time: template.start_time,\n    end_time: template.end_time,\n    block_type: template.block_type,\n    description: template.description\n  };\n});\n\n// Process active tasks for dependency checking\nconst activeTasks = activeTaskItems.map(item => {\n  const task = item.json;\n  return {\n    id: task.id,\n    title: task.title,\n    priority: task.priority,\n    target_deadline: task.target_deadline,\n    dl_hardness: task.dl_hardness,\n    dependencies: task.dependencies || [],\n    est_duration: task.est_duration,\n    task_status: task.task_status\n  };\n});\n\n// Calculate current schedule density (tasks per day)\nconst today = new Date().toISOString().split('T')[0];\nconst todayScheduledTasks = currentSchedule.filter(s => s.scheduled_date === today);\nconst scheduleDensity = todayScheduledTasks.length;\n\n// Get available time blocks from template for today\nconst todayDayOfWeek = new Date().getDay(); // 0 = Sunday, 1 = Monday, etc.\nconst todayTemplate = scheduleTemplate.filter(t => \n  t.day_of_week === todayDayOfWeek || t.day_of_week === null // null means applies to all days\n);\n\nreturn [{\n  json: {\n    taskToEvaluate: taskToEvaluate,\n    currentSchedule: currentSchedule,\n    scheduleTemplate: todayTemplate,\n    activeTasks: activeTasks,\n    scheduleDensity: scheduleDensity,\n    evaluationDate: today,\n    context: {\n      totalActiveScheduledToday: todayScheduledTasks.length,\n      availableTemplateBlocks: todayTemplate.length,\n      totalActiveTasks: activeTasks.length\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1220,
+        1020
+      ],
+      "id": "c268b89c-97f1-4437-9288-c5a8cf386971",
+      "name": "Prepare Scheduling Context"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Task to Evaluate: {{ $json.taskToEvaluate }}\n\nCurrent Schedule (Today): {{ $json.currentSchedule }}\n\nSchedule Template (Available Blocks): {{ $json.scheduleTemplate }}\n\nActive Tasks: {{ $json.activeTasks }}\n\nContext: {{ $json.context }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are an expert scheduling decision engine for a personal AI assistant. Your job is to analyze whether a given task should be scheduled today based on multiple factors.\n\n**Your Decision Criteria:**\n\n1. **Deadline Urgency Analysis:**\n   - Tasks with target_deadline today or overdue: HIGH urgency\n   - Tasks with target_deadline within 3 days: MEDIUM urgency  \n   - Tasks with target_deadline > 3 days: LOW urgency\n   - Consider dl_hardness (1=must meet, 5=flexible)\n\n2. **Priority Assessment:**\n   - priority 1-2: Critical/High priority tasks\n   - priority 3: Medium priority tasks\n   - priority 4-5: Low priority tasks\n\n3. **Schedule Capacity Analysis:**\n   - Check available time blocks in schedule template\n   - Consider current schedule density (avoid overloading)\n   - Ensure minimum breaks between tasks (5-10 minutes)\n\n4. **Dependency Validation:**\n   - Do NOT schedule if task has incomplete dependencies\n   - Check if dependency tasks are scheduled/completed first\n\n5. **Schedule Template Respect:**\n   - Only schedule during available work blocks\n   - Respect break times, lunch, personal time\n   - Consider block_type preferences (focus vs admin work)\n\n**Decision Output Format:**\nReturn ONLY a JSON object with this exact structure:\n\n```json\n{\n  \"should_schedule\": true,\n  \"confidence\": 85,\n  \"reasoning\": \"High priority task with deadline today. Available 2-hour morning focus block. No dependencies blocking.\",\n  \"urgency_score\": 9,\n  \"priority_score\": 8,\n  \"capacity_score\": 7,\n  \"dependency_status\": \"clear\",\n  \"suggested_time_window\": \"morning_focus\",\n  \"estimated_duration_needed\": 90,\n  \"schedule_impact\": \"low\",\n  \"alternative_suggestions\": []\n}\n```\n\n**Field Definitions:**\n- `should_schedule`: boolean - whether to schedule this task today\n- `confidence`: 1-100 - how confident you are in this decision\n- `reasoning`: string - clear explanation of the decision\n- `urgency_score`: 1-10 - how urgent this task is\n- `priority_score`: 1-10 - task priority adjusted for context\n- `capacity_score`: 1-10 - how well current schedule can accommodate\n- `dependency_status`: \"clear\"|\"blocked\"|\"partial\" - dependency readiness\n- `suggested_time_window`: string - best time block type for this task\n- `estimated_duration_needed`: integer - minutes needed including buffers\n- `schedule_impact`: \"low\"|\"medium\"|\"high\" - impact on rest of schedule\n- `alternative_suggestions`: array - if not scheduling, what alternatives?\n\n**Decision Rules:**\n1. NEVER schedule if dependencies are not complete\n2. High urgency + high priority = almost always schedule\n3. If schedule is already dense (>6 tasks), only schedule critical items\n4. Respect user's schedule template boundaries absolutely\n5. Consider task duration vs available blocks realistically\n\n**Response Format:**\nReturn ONLY the JSON object. No additional text or explanation outside the JSON."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.9,
+      "position": [
+        1420,
+        1020
+      ],
+      "id": "4b9bc7db-abb8-4c26-ab23-c156bd5cacfc",
+      "name": "Scheduling Decision Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1"
+        },
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1400,
+        1280
+      ],
+      "id": "a2d1cfb2-e7bd-4545-a1c1-b92fa9b2f95d",
+      "name": "OpenAI Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "adOJRYPMvbKwB0LQ",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and validate the scheduling decision\nconst decisionOutput = JSON.parse($('Scheduling Decision Agent').item.json.output);\n\n// Add metadata and logging\nconst decision = {\n  ...decisionOutput,\n  timestamp: new Date().toISOString(),\n  workflow_version: \"scheduler_decision_engine_v1.0\",\n  input_task: $('Prepare Scheduling Context').item.json.taskToEvaluate,\n  schedule_context: {\n    evaluation_date: $('Prepare Scheduling Context').item.json.evaluationDate,\n    current_density: $('Prepare Scheduling Context').item.json.scheduleDensity,\n    available_blocks: $('Prepare Scheduling Context').item.json.scheduleTemplate.length\n  }\n};\n\n// Validate required fields\nconst requiredFields = ['should_schedule', 'confidence', 'reasoning', 'urgency_score', 'priority_score'];\nfor (const field of requiredFields) {\n  if (decision[field] === undefined || decision[field] === null) {\n    throw new Error(`Missing required field: ${field}`);\n  }\n}\n\n// Ensure confidence is between 1-100\nif (decision.confidence < 1 || decision.confidence > 100) {\n  decision.confidence = Math.max(1, Math.min(100, decision.confidence));\n}\n\n// Ensure scores are between 1-10\nconst scoreFields = ['urgency_score', 'priority_score', 'capacity_score'];\nfor (const field of scoreFields) {\n  if (decision[field] !== undefined) {\n    decision[field] = Math.max(1, Math.min(10, decision[field]));\n  }\n}\n\nreturn [{\n  json: {\n    decision: decision,\n    success: true,\n    workflow: \"scheduler_decision_engine\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        1020
+      ],
+      "id": "a7dd02a8-37ad-4c19-bf77-d0e223163f4d",
+      "name": "Process Decision Output"
+    },
+    {
+      "parameters": {
+        "content": "## Scheduler Decision Engine\n\nThis workflow determines whether a task should be scheduled based on:\n\n**Input:** Task object + current schedule + schedule template\n\n**Decision Factors:**\n- Deadline urgency & hardness\n- Task priority level\n- Available time blocks\n- Current schedule density\n- Dependency status\n\n**Output:** JSON decision with reasoning and scores\n\n**Used By:**\n- Morning Planner workflow\n- Dynamic Adjuster workflow\n- Task Creator (for immediate scheduling)",
+        "height": 560,
+        "width": 980,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        400,
+        680
+      ],
+      "id": "055edd09-385f-4152-b770-40aec907908d",
+      "name": "Workflow Description"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "schedule",
+                    "rightValue": "yes",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "61b51f58-a1fb-4c4e-9af2-581a1b627cc8"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "schedule"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "a0d71cb8-ef82-4ae3-81a6-322cd62359bb",
+                    "leftValue": "schedule",
+                    "rightValue": "no",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "don't schedule"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1980,
+        1020
+      ],
+      "id": "6fc4a7a6-422b-4d31-9744-745592e4ef77",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "9plzwaZTolW6xym1",
+          "mode": "list",
+          "cachedResultName": "CoS_Calendar"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2200,
+        840
+      ],
+      "id": "ca35175a-7f92-48c1-80b9-5cbfee76ed5c",
+      "name": "To Timeblock Allocator"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "9plzwaZTolW6xym1",
+          "mode": "list",
+          "cachedResultName": "CoS_Calendar"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2200,
+        1140
+      ],
+      "id": "c2613fb9-f245-4fbd-af59-deb75963496c",
+      "name": "Back"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        760,
+        840
+      ],
+      "id": "e5b98900-2d37-4726-a7bd-1488b4ae2465",
+      "name": "When chat message received",
+      "webhookId": "5a3301d3-32ab-47f4-bd01-6eea6e754526"
+    }
+  ],
+  "connections": {
+    "When Called by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Get Current Schedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Current Schedule": {
+      "main": [
+        [
+          {
+            "node": "Get Schedule Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Schedule Template": {
+      "main": [
+        [
+          {
+            "node": "Get Active Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Tasks": {
+      "main": [
+        [
+          {
+            "node": "Prepare Scheduling Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Scheduling Context": {
+      "main": [
+        [
+          {
+            "node": "Scheduling Decision Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scheduling Decision Agent": {
+      "main": [
+        [
+          {
+            "node": "Process Decision Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Scheduling Decision Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Decision Output": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "To Timeblock Allocator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Back",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Get Current Schedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b9b82d41d68b4cc3cb838d1fce85e598d4c0bc143e0e5e98b9cee330eb87c3d7"
+  }
+}

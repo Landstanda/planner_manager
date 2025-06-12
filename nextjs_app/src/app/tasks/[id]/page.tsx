@@ -125,17 +125,6 @@ export default function TaskDetailPage({ params }: TaskDetailPageProps) {
     }
   }
 
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'Not set'
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
-
   const formatDateShort = (dateString: string | null) => {
     if (!dateString) return 'Not set'
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -209,7 +198,7 @@ export default function TaskDetailPage({ params }: TaskDetailPageProps) {
           <div className="text-center py-12">
             <div className="text-gray-400 text-6xl mb-4">📝</div>
             <h3 className="text-lg font-medium text-gray-900 mb-2">Task not found</h3>
-            <p className="text-gray-600 mb-4">The task you're looking for doesn't exist or has been deleted.</p>
+            <p className="text-gray-600 mb-4">The task you&apos;re looking for doesn&apos;t exist or has been deleted.</p>
             <Link 
               href="/tasks"
               className="text-blue-600 hover:text-blue-800 font-medium"

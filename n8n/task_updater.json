@@ -1,0 +1,510 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -140,
+        840
+      ],
+      "id": "f98af682-8557-4be7-bae3-4f9123c8d721",
+      "name": "When chat message received",
+      "webhookId": "77bb47d0-1198-43ab-be8a-0916b0df8788"
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -140,
+        1020
+      ],
+      "id": "19aa6366-458d-483b-bc7a-381f77362389",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "schedule",
+        "filterType": "none"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        400,
+        900
+      ],
+      "id": "052e28a3-af11-4062-bd90-4a4a3fc32f6e",
+      "name": "Get Scheduled Tasks",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "IeWFpcXPM3QZKyFx",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "projects",
+        "filterType": "none"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        400,
+        1040
+      ],
+      "id": "de4c002a-a787-4f81-ac4f-0220b96eff6b",
+      "name": "Get All Projects",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "IeWFpcXPM3QZKyFx",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process scheduled tasks and projects for context\nconst scheduleItems = $('Get Scheduled Tasks').all();\nconst projectItems = $('Get All Projects').all();\n\n// Format scheduled tasks for context\nconst scheduledTaskStrings = [];\nfor (const item of scheduleItems) {\n  const scheduleEntry = item.json;\n  let scheduleInfo = `Schedule ID: ${scheduleEntry.id}`;\n  \n  if (scheduleEntry.task_id) {\n    scheduleInfo += ` | Task ID: ${scheduleEntry.task_id}`;\n  }\n  \n  if (scheduleEntry.scheduled_date) {\n    scheduleInfo += ` | Scheduled: ${scheduleEntry.scheduled_date}`;\n  }\n  \n  if (scheduleEntry.time_block) {\n    scheduleInfo += ` | Time Block: ${scheduleEntry.time_block}`;\n  }\n  \n  if (scheduleEntry.status) {\n    scheduleInfo += ` | Status: ${scheduleEntry.status}`;\n  }\n  \n  scheduledTaskStrings.push(scheduleInfo);\n}\n\n// Format projects for context\nconst projectStrings = [];\nfor (const item of projectItems) {\n  const project = item.json;\n  let projectInfo = `ID: ${project.id} | Name: ${project.name}`;\n  \n  if (project.description) {\n    projectInfo += ` | Description: ${project.description}`;\n  }\n  \n  if (project.priority) {\n    projectInfo += ` | Priority: ${project.priority}`;\n  }\n  \n  projectStrings.push(projectInfo);\n}\n\n// Get trigger data\nlet triggerData;\ntry {\n  triggerData = $('When chat message received').first().json;\n} catch (e) {\n  try {\n    triggerData = $('When Executed by Another Workflow').first().json;\n  } catch (e2) {\n    triggerData = { chatInput: 'No input provided', sessionId: 'unknown' };\n  }\n}\n\nreturn [{\n  json: {\n    scheduledTasks: scheduledTaskStrings.join('\\n'),\n    allProjects: projectStrings.join('\\n'),\n    userRequest: triggerData.chatInput || triggerData.input || 'No request provided',\n    sessionId: triggerData.sessionId || 'unknown'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        580,
+        960
+      ],
+      "id": "93e65bfd-ee3a-4be3-a059-ebd6b4018373",
+      "name": "Prepare Context"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=User Request: {{ $json.userRequest }}\n\nCurrently Scheduled Tasks:\n{{ $json.scheduledTasks }}\n\nAvailable Projects:\n{{ $json.allProjects }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are an expert task management assistant that analyzes user requests to update tasks.\n\nYou will be provided with:\n- User Request: What the user wants to do\n- Currently Scheduled Tasks: Tasks that are currently scheduled/active\n- Available Projects: All available projects\n\nYou have access to a **Task_Vector_Search** tool that can search for specific tasks by semantic similarity. Use this tool when:\n- The user mentions a task by name/description but you need the exact task ID\n- You need to find tasks related to specific topics or projects\n- The user's request is ambiguous and you need to find the right task\n\nYour job is to analyze the user request and determine what updates need to be made. You should output a JSON object with the following structure:\n\n```json\n{\n  \"action_type\": \"single_update\",\n  \"updates\": [\n    {\n      \"task_id\": \"123\",\n      \"field\": \"task_status\",\n      \"value\": \"done\",\n      \"reason\": \"User indicated they finished this task\"\n    }\n  ],\n  \"summary\": \"Marked task 'Fix login bug' as completed\"\n}\n```\n\n**Action Types:**\n- `single_update`: Update one field of one task\n- `multi_update`: Update multiple fields or multiple tasks\n- `dependency_update`: Add/remove task dependencies\n- `status_change`: Change task status (ready, progressing, done, cancelled)\n- `priority_change`: Change task priority (2-5)\n- `deadline_change`: Update target deadline\n- `project_change`: Move task to different project\n\n**Common Request Examples:**\n\n1. **\"Finished what I was working on\"**\n   ```json\n   {\n     \"action_type\": \"status_change\",\n     \"updates\": [{\n       \"task_id\": \"45\",\n       \"field\": \"task_status\", \n       \"value\": \"done\",\n       \"reason\": \"User completed their current task\"\n     }],\n     \"summary\": \"Marked current task as completed\"\n   }\n   ```\n\n2. **\"I'm gonna do task A instead of B now\"**\n   ```json\n   {\n     \"action_type\": \"multi_update\",\n     \"updates\": [\n       {\n         \"task_id\": \"12\",\n         \"field\": \"task_status\",\n         \"value\": \"progressing\", \n         \"reason\": \"User switched to this task\"\n       },\n       {\n         \"task_id\": \"34\",\n         \"field\": \"task_status\",\n         \"value\": \"ready\",\n         \"reason\": \"User stopped working on this task\"\n       }\n     ],\n     \"summary\": \"Switched from task B to task A\"\n   }\n   ```\n\n3. **\"I need to finish A before B\"**\n   ```json\n   {\n     \"action_type\": \"dependency_update\",\n     \"updates\": [{\n       \"task_id\": \"67\",\n       \"field\": \"dependencies\",\n       \"value\": [\"23\"],\n       \"reason\": \"Task A must be completed before task B\"\n     }],\n     \"summary\": \"Added task A as dependency for task B\"\n   }\n   ```\n\n4. **\"I want to finish A before tonight\"**\n   ```json\n   {\n     \"action_type\": \"multi_update\",\n     \"updates\": [\n       {\n         \"task_id\": \"89\",\n         \"field\": \"target_deadline\",\n         \"value\": \"2024-01-15T23:59:59.000Z\",\n         \"reason\": \"User wants to complete by end of today\"\n       },\n       {\n         \"task_id\": \"89\",\n         \"field\": \"priority\",\n         \"value\": 2,\n         \"reason\": \"Increased priority due to tight deadline\"\n       },\n       {\n         \"task_id\": \"89\",\n         \"field\": \"dl_hardness\",\n         \"value\": 2,\n         \"reason\": \"Moderately firm deadline\"\n       }\n     ],\n     \"summary\": \"Updated task A deadline to tonight with higher priority\"\n   }\n   ```\n\n**Field Names & Values:**\n- task_status: 'ready', 'progressing', 'done', 'cancelled'\n- priority: integer 2-5 (2=highest, 5=lowest)\n- target_deadline: ISO datetime string or null\n- dl_hardness: integer 1-5 (1=must meet, 5=flexible)\n- dependencies: array of task IDs (integers)\n- project_id: project ID number\n- title: task title\n- description: task description\n- est_duration: estimated minutes\n- notes: additional notes\n\n**Important Rules:**\n1. **Always use the Task_Vector_Search tool** when you need to find specific tasks mentioned by the user\n2. Always identify tasks by their exact ID from search results or scheduled list\n3. When setting dependencies, use task IDs as integers, not strings\n4. For deadline changes, consider context (\"tonight\" = end of today, \"tomorrow\" = end of tomorrow)\n5. Status changes should be logical (ready → progressing → done, or ready/progressing → cancelled)\n6. If you can't identify a specific task clearly, use the search tool or ask for clarification\n7. When switching between tasks, typically set the new task to 'progressing' and old task to 'ready'\n\n**Response Format:**\nReturn ONLY valid JSON matching the structure above. No additional text or explanation outside the JSON."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.9,
+      "position": [
+        780,
+        960
+      ],
+      "id": "47b3e784-fb9e-4397-8eb0-db4939c9af2c",
+      "name": "Analyze Request"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1"
+        },
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        780,
+        1240
+      ],
+      "id": "5151432e-ae51-4bbc-92df-a647d8efe266",
+      "name": "OpenAI Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "adOJRYPMvbKwB0LQ",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolName": "Task_Vector_Search",
+        "toolDescription": "Search for tasks by semantic similarity. Use this to find specific tasks when the user mentions them by name, description, or topic. Returns task details including ID, title, description, status, priority, deadlines, and dependencies.",
+        "tableName": {
+          "__rl": true,
+          "value": "tasks",
+          "mode": "list",
+          "cachedResultName": "tasks"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.1,
+      "position": [
+        920,
+        1240
+      ],
+      "id": "cfcbcd0b-6e67-4517-8a8d-3435237be367",
+      "name": "Task Vector Search",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IeWFpcXPM3QZKyFx",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        940,
+        1380
+      ],
+      "id": "71243f44-a382-4c90-8f98-e4d71d6be82c",
+      "name": "Embeddings OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "adOJRYPMvbKwB0LQ",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the LLM output\nconst llmOutput = JSON.parse($('Analyze Request').item.json.output);\nconst updates = llmOutput.updates || [];\n\n// Group updates by task_id for efficient database operations\nconst taskUpdates = {};\n\nfor (const update of updates) {\n  const taskId = update.task_id;\n  \n  if (!taskUpdates[taskId]) {\n    taskUpdates[taskId] = {\n      task_id: taskId,\n      updates: {},\n      reasons: []\n    };\n  }\n  \n  // Handle special case for dependencies - they need to be arrays\n  if (update.field === 'dependencies') {\n    // Ensure value is an array\n    let depValue = update.value;\n    if (typeof depValue === 'string') {\n      // Try to parse as JSON array, or split by comma\n      try {\n        depValue = JSON.parse(depValue);\n      } catch (e) {\n        depValue = depValue.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));\n      }\n    }\n    // Ensure all dependency IDs are integers\n    if (Array.isArray(depValue)) {\n      depValue = depValue.map(id => parseInt(id)).filter(id => !isNaN(id));\n    }\n    taskUpdates[taskId].updates[update.field] = depValue;\n  } else {\n    taskUpdates[taskId].updates[update.field] = update.value;\n  }\n  \n  taskUpdates[taskId].reasons.push(update.reason);\n}\n\n// Convert to array for processing\nconst updateArray = Object.values(taskUpdates);\n\nreturn updateArray.map(update => ({\n  json: {\n    task_id: update.task_id,\n    updates: update.updates,\n    reasons: update.reasons,\n    summary: llmOutput.summary,\n    action_type: llmOutput.action_type\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1180,
+        960
+      ],
+      "id": "791f456a-3732-4d0d-8bd0-12dd19ce3d80",
+      "name": "Prepare Updates"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1380,
+        960
+      ],
+      "id": "ccc5ab03-16c6-452e-9fe8-389eea5b8580",
+      "name": "Loop Over Updates"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.task_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {},
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1660,
+        1040
+      ],
+      "id": "e25a6f40-e20f-4b19-888a-f233225c9f35",
+      "name": "Update Task",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IeWFpcXPM3QZKyFx",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect all the update results\nconst allUpdates = $('Loop Over Updates').all();\nconst updateResults = [];\n\nfor (const update of allUpdates) {\n  const updateData = update.json;\n  updateResults.push({\n    task_id: updateData.task_id,\n    action_type: updateData.action_type,\n    summary: updateData.summary,\n    reasons: updateData.reasons\n  });\n}\n\n// Create a summary message\nconst mainSummary = updateResults[0]?.summary || 'Task updates completed';\nconst totalUpdates = updateResults.length;\n\nconst responseMessage = `Task Update Complete: ${mainSummary}\\n\\nUpdated ${totalUpdates} task(s) based on your request.`;\n\nreturn [{\n  json: {\n    message: responseMessage,\n    total_updates: totalUpdates,\n    action_type: updateResults[0]?.action_type,\n    details: updateResults\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1640,
+        840
+      ],
+      "id": "1c095cca-5c62-4142-92c5-c0a1add9c32d",
+      "name": "Finalize Response"
+    },
+    {
+      "parameters": {
+        "content": "## Task Update Workflow (Enhanced)\n\n#### This workflow handles task update requests with:\n- **Scheduled Task Focus**: Only loads currently scheduled/active tasks\n- **Smart Vector Search**: AI can search for specific tasks semantically\n- **Comprehensive Updates**: Status, priority, deadlines, dependencies, etc.\n- **Batch Processing**: Efficient multiple task updates\n.\n.\n.\n.\n.\n.\n.\n.\n.\n.\n.\n.\n### Key Features:\n- Uses schedule table for focused context\n- Vector store tool for precise task finding\n- Detailed JSON examples in system prompt\n- Handles complex multi-task scenarios",
+        "height": 560,
+        "width": 700,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        40,
+        680
+      ],
+      "id": "c13a75b2-657c-48cb-9407-0d0a08aa9069",
+      "name": "Workflow Description"
+    }
+  ],
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Get Scheduled Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Get Scheduled Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Scheduled Tasks": {
+      "main": [
+        [
+          {
+            "node": "Get All Projects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Projects": {
+      "main": [
+        [
+          {
+            "node": "Prepare Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Context": {
+      "main": [
+        [
+          {
+            "node": "Analyze Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Request": {
+      "main": [
+        [
+          {
+            "node": "Prepare Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Analyze Request",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Task Vector Search": {
+      "ai_tool": [
+        [
+          {
+            "node": "Analyze Request",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Task Vector Search",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Updates": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Updates": {
+      "main": [
+        [
+          {
+            "node": "Finalize Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Task": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Updates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b9b82d41d68b4cc3cb838d1fce85e598d4c0bc143e0e5e98b9cee330eb87c3d7"
+  }
+}

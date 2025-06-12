@@ -1,0 +1,1099 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -160,
+        380
+      ],
+      "id": "957c5825-04da-4d13-b29b-8fa29aefc31d",
+      "name": "When chat message received",
+      "webhookId": "6d93bedd-a0fa-4561-8012-7bb4c42ff4c0"
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -160,
+        680
+      ],
+      "id": "352400de-efcb-4eb6-b5ce-8d6b3eb5d990",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.output }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are an expert at inferring task metadata.\n\nYou will be provided with the following context:\n\n* **Current Task**  \n  The parsed task object (title, description, project, subtasks.).\n\n* **User’s Request**  \n  The original user task creation request.\n\n* **Similar Past Tasks**  \n  Similar completed tasks, including their priorities, deadlines, and deadline flexibilities.\n\nYour job is to analyze the provided context and determine four specific fields for a new task:\n\n1. **status** (Required)  \n   * One of: `ready`, `progressing`, `done`.  \n   * Default to `ready` unless the user states or implies otherwise (e.g. “I’ve already started…” → `active`; “I finished this morning” → `completed`).\n\n2. **priority** (Required)  \n   * Integer 2–5.  \n   * If the task’s **project** already defines a priority, inherit that.  \n   * Otherwise assign according to these criteria:  \n     - **2**: An “errand” with a hard deadline (e.g. “must file this by…”).  \n     - **3**: A purchase or provisioning step needed for a project (e.g. “buy printer ink”).  \n     - **4**: A task with no stated deadline.  \n     - **5**: Something clearly deferred (“when I get around to it,” “sometime next year”).\n\n3. **deadline** (Required)  \n   * The date/time by which the task should be completed, in date-time format (`M/D/YYYY 0:00:00`), or `null` if no date can be determined.  \n   * **Decision priority:**  \n     1. Explicit date/time in the user’s text (e.g. “by June 5, 2025”).  \n     2. Similar past tasks’ deadlines (if highly analogous).  \n     3. Contextual guess (e.g. interpreting “this afternoon” as today’s date).\n\n4. **hardness** (Required)\n   * Indicates how strictly the deadline must be met.  \n   * Integer 1–5.  \n   * **Scale:**  \n     * **1**: Must be completed before the deadline.  \n     * **2**: It’s polite to be done before the deadline.  \n     * **3**: It’s a personal goal.  \n     * **4**: When the user gets around to it.  \n     * **5**: There’s no deadline and it’s not implied that a deadline is important.  \n\n---\n\n**Decision Priority (applies to all fields):**  \n1. **Explicit user statements** (highest priority).  \n2. **Similar past tasks** (if explicitly comparable).  \n3. **Context‐based inference** (common sense or domain knowledge).\n\n---\n\n**Output Format:**  \nReturn **only** a JSON object with exactly these four keys and no extra properties:\n\n```json\n{\n  \"status\":   \"<ready|progressing|done>\",\n  \"priority\": <2|3|4|5>,\n  \"deadline\": \"<M/D/YYYY 0:00:00|null>\",\n  \"hardness\": \"<1|2|3|4|5>\"\n}\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.9,
+      "position": [
+        1000,
+        840
+      ],
+      "id": "ef06b1b9-59f9-4ecc-ba5c-f306ae042a6c",
+      "name": "Status, Priority, Deadline"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4.1",
+          "mode": "list",
+          "cachedResultName": "gpt-4.1"
+        },
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        740,
+        1380
+      ],
+      "id": "10a2c9ea-163b-49f3-bd65-8a47f6b7c33a",
+      "name": "OpenAI Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "adOJRYPMvbKwB0LQ",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Helper function to clean JSON strings that might have markdown formatting\nfunction cleanJsonString(jsonString) {\n  if (typeof jsonString !== 'string') return jsonString;\n  \n  // Remove markdown code block formatting\n  return jsonString\n    .replace(/^```json\\s*/, '')  // Remove opening ```json\n    .replace(/\\s*```$/, '')      // Remove closing ```\n    .trim();\n}\n\n// Combine all the AI analysis results with cleaned JSON\nconst taskBasics = JSON.parse(cleanJsonString($('Title, Description, Projects, Subtasks1').item.json.output));\nconst durationInfo = JSON.parse(cleanJsonString($('Duration, Dependencies').item.json.output));\nconst statusInfo = JSON.parse(cleanJsonString($('Status, Priority, Deadline').item.json.output));\n\n// Get project_id from projects table\nconst projects = $('Projects').all();\nconst matchingProject = projects.find(p => p.json.name === taskBasics.projects);\nconst project_id = matchingProject ? matchingProject.json.id : null;\n\n// Prepare the main task for insertion\nconst mainTask = {\n  title: taskBasics.title,\n  description: taskBasics.description,\n  project_id: project_id,\n  task_status: statusInfo.status,\n  priority: statusInfo.priority,\n  est_duration: durationInfo.est_duration,\n  dur_conf: durationInfo.dur_conf,\n  dependencies: durationInfo.dependencies,// Blocking dependencies\n  subtasks: [], // Initialize empty, will be populated later\n  target_deadline: statusInfo.deadline,\n  dl_hardness: parseInt(statusInfo.hardness),\n  reoccuring: null,\n  deferred: 0,\n  tags: [taskBasics.projects],\n  notes: `Original Prompt: ${$('Code1').item.json.query}`\n};\n\n// Prepare subtasks with minimal fields\nconst subtasks = taskBasics.subtasks.map(subtaskTitle => ({\n  title: subtaskTitle,\n  project_id: project_id,\n  task_status: 'ready',\n  priority: statusInfo.priority,\n  tags: [taskBasics.projects, 'subtask'],\n  notes: `Subtask of: ${taskBasics.title}. Original Prompt: ${$('Code1').item.json.query}`\n}));\n\nreturn [\n  {\n    json: {\n      mainTask,\n      subtasks,\n      hasSubtasks: subtasks.length > 0\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        640
+      ],
+      "id": "3d664546-68ca-439c-a5e7-3681a45c5f8c",
+      "name": "Prepare Tasks for DB"
+    },
+    {
+      "parameters": {
+        "tableId": "tasks",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "title",
+              "fieldValue": "={{ $json.mainTask.title }}"
+            },
+            {
+              "fieldId": "project_id",
+              "fieldValue": "={{ $json.mainTask.project_id }}"
+            },
+            {
+              "fieldId": "priority",
+              "fieldValue": "={{ $json.mainTask.priority }}"
+            },
+            {
+              "fieldId": "est_duration",
+              "fieldValue": "={{ $json.mainTask.est_duration }}"
+            },
+            {
+              "fieldId": "dur_conf",
+              "fieldValue": "={{ $json.mainTask.dur_conf }}"
+            },
+            {
+              "fieldId": "target_deadline",
+              "fieldValue": "={{ $json.mainTask.target_deadline }}"
+            },
+            {
+              "fieldId": "dl_hardness",
+              "fieldValue": "={{ $json.mainTask.dl_hardness }}"
+            },
+            {
+              "fieldId": "reoccuring",
+              "fieldValue": "={{ $json.mainTask.reoccuring }}"
+            },
+            {
+              "fieldId": "description",
+              "fieldValue": "={{ $json.mainTask.description }}"
+            },
+            {
+              "fieldId": "notes",
+              "fieldValue": "={{ $json.mainTask.notes }}"
+            },
+            {
+              "fieldId": "tags",
+              "fieldValue": "={{ $json.mainTask.tags }}"
+            },
+            {
+              "fieldId": "subtasks",
+              "fieldValue": "={{ $json.mainTask.subtasks }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1580,
+        520
+      ],
+      "id": "efa6f264-0cb6-42de-8f56-d0d1b2c388fb",
+      "name": "Insert Main Task",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IeWFpcXPM3QZKyFx",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-subtasks-condition",
+              "leftValue": "={{ $json.hasSubtasks }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            },
+            {
+              "id": "2f671618-353d-406c-b7eb-314ae2abc448",
+              "leftValue": "={{ $('Prepare Tasks for DB').item.json.subtasks }}",
+              "rightValue": false,
+              "operator": {
+                "type": "array",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2220,
+        520
+      ],
+      "id": "0d90a6db-6cbc-4d44-8698-0981397097d9",
+      "name": "Has Subtasks?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process projects from Supabase\nconst projectStrings = [];\n\n// Get projects data - try different possible node names\nlet projectItems;\ntry {\n  projectItems = $('Projects').all();\n} catch (e) {\n  // If 'Projects' doesn't exist, try to get from the first input\n  projectItems = $input.all();\n}\n\nfor (const item of projectItems) {\n  const projectData = item.json;\n  const projectName = projectData.name;\n  const projectDescription = projectData.description;\n  const projectGoals = projectData.goals;\n  const projectPriority = projectData.priority;\n\n  // Build a comprehensive project description\n  let projectInfo = projectName;\n  \n  if (projectDescription && typeof projectDescription === 'string') {\n    projectInfo += `: ${projectDescription.trim()}`;\n  }\n  \n  if (projectGoals && typeof projectGoals === 'string' && projectGoals !== 'null') {\n    projectInfo += ` (Goals: ${projectGoals.trim()})`;\n  }\n  \n  if (projectPriority) {\n    projectInfo += ` [Priority: ${projectPriority}]`;\n  }\n  \n  if (projectName && typeof projectName === 'string') {\n    projectStrings.push(projectInfo);\n  }\n}\n\nconst formattedProjectListResult = projectStrings.join('\\n');\n\n// Access the trigger output - try different possible trigger node names\nlet triggerNodeOutput;\ntry {\n  triggerNodeOutput = $('When chat message received').first().json;\n} catch (e) {\n  try {\n    triggerNodeOutput = $('Webhook').first().json;\n  } catch (e2) {\n    // Fallback to items if trigger nodes don't exist\n    triggerNodeOutput = items[0].json;\n  }\n}\n\nconst sessionIdFromTrigger = triggerNodeOutput.sessionId;\nconst chatInputFromTrigger = triggerNodeOutput.chatInput;\n\nreturn [{\n  json: {\n    formattedProjectList: formattedProjectListResult,\n    sessionId: sessionIdFromTrigger,\n    originalChatInput: chatInputFromTrigger\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        200,
+        380
+      ],
+      "id": "2814ec61-35ea-4c0d-b5e4-e6d5afe9076c",
+      "name": "Code3"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=projects: {{ $json.formattedProjectList }}\n\nuser_request:{{ $json.originalChatInput }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are a task‐creation assistant.  \nInputs:  \n• projects: a list of all available project tags  \n• user_request: the user's natural‐language description of a task  \n\nYour job: parse the request and output **only** a JSON object with these keys:  \n• title (string): an imperative, concise task name  \n• description (string): a brief summary of the task's known details  \n• projects (string): name of the project that best matches the request  \n• subtasks (array of strings): decide if the user_request task should be split in to more than one task. If split, list each subtask; if not, return an empty array  \n\nRules:  \n1. If it's appropriate to split the task into two or more steps, populate `subtasks`; otherwise leave it empty.\n      Example 1: \n          Prompt: I need to go grocery shopping\n          subtasks: [\"make grocery list\", \"grocery shopping\"]\n      Example 2: \n          Prompt: Reply to Marcy.\n          subtasks: []\n      Example 3: \n          Prompt: I need to figure out the best method to extract keywords and implement it.\n          subtasks: [\"research keyword extraction\", \"create keyword extraction plan\", \"build keyword extractor\", \"test keyword extractor\"]\n2. Don't ask follow-ups here: this agent only classifies and proposes subtasks.  \n3. Projects are presented as \"name: description\". Return only the *name* of the project that best matches the user_request.\n4. Output valid JSON and nothing else.\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        260,
+        640
+      ],
+      "id": "990f5efb-b282-4f44-a13f-a4fa69d41a34",
+      "name": "Title, Description, Projects, Subtasks1",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "projects",
+        "filterType": "none"
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        20,
+        520
+      ],
+      "id": "eccfa2ef-1ca4-4418-bffd-44a38783c1cb",
+      "name": "Projects",
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "IeWFpcXPM3QZKyFx",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the parsed task from the previous agent\nconst taskOutput = JSON.parse($('Title, Description, Projects, Subtasks1').item.json.output);\n\n// Combine title and description for similarity search\nconst searchQuery = [\n  taskOutput.title,\n  taskOutput.description\n].filter(Boolean).join(' ');\n\nreturn [{\n  json: {\n    query: searchQuery,\n    taskData: taskOutput  // Pass through the task data for later use\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        360
+      ],
+      "id": "1feb0a6d-c408-44d4-8b30-0e332de21b8d",
+      "name": "Code1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare task content for embedding\nconst mainTask = $('Insert Main Task').item.json;\n\n// Include only content that's useful for semantic similarity\nconst taskContent = [\n  mainTask.title,\n  mainTask.description,\n  mainTask.notes\n].filter(Boolean).join(' ');\n\n// Optional: Include project context for better matching\n// Get project name from the original workflow data\nconst projectName = $('Prepare Tasks for DB').item.json.mainTask.tags?.[0] || '';\n\n// Combine task content with project context\nconst embeddingContent = [\n  taskContent,\n  projectName ? `Project: ${projectName}` : ''\n].filter(Boolean).join(' ');\n\nreturn [{\n  json: {\n    task_id: mainTask.id,\n    data: embeddingContent,  // Changed from 'content' to 'data'\n    metadata: {\n      project_id: mainTask.project_id,\n      priority: mainTask.priority,\n      task_status: mainTask.task_status,\n      created_at: mainTask.created_at\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        400
+      ],
+      "id": "2a419056-13b6-4ad0-b483-43c2429a5e05",
+      "name": "Prepare for Embedding"
+    },
+    {
+      "parameters": {
+        "mode": "load",
+        "tableName": {
+          "__rl": true,
+          "value": "tasks",
+          "mode": "list",
+          "cachedResultName": "tasks"
+        },
+        "prompt": "={{ $json.taskData.title }}\n{{ $json.taskData.description }}\n{{ $json.taskData.projects }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.1,
+      "position": [
+        640,
+        240
+      ],
+      "id": "4670be58-6ad8-4890-8f38-1fee93fef0ac",
+      "name": "Supabase Vector Store",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IeWFpcXPM3QZKyFx",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        660,
+        420
+      ],
+      "id": "4fcf1f69-45d5-4d93-8c02-1c6307289311",
+      "name": "Embeddings OpenAI2",
+      "credentials": {
+        "openAiApi": {
+          "id": "adOJRYPMvbKwB0LQ",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "toolName": "Dependent_Task_Vector_Search",
+        "toolDescription": "Search for the task the user is referring to that must be accomplished prior to the task currently being created.",
+        "tableName": {
+          "__rl": true,
+          "value": "tasks",
+          "mode": "list",
+          "cachedResultName": "tasks"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1.1,
+      "position": [
+        920,
+        1160
+      ],
+      "id": "f9960bfd-2fc4-4ca7-ae48-67d59b597d1e",
+      "name": "Supabase Vector Store1",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IeWFpcXPM3QZKyFx",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1000,
+        1340
+      ],
+      "id": "3ca71727-11a2-456d-bf77-04d79357def9",
+      "name": "Embeddings OpenAI",
+      "credentials": {
+        "openAiApi": {
+          "id": "adOJRYPMvbKwB0LQ",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Current Task: {{ $('Title, Description, Projects, Subtasks1').item.json.output }}\n\nUser's Request: {{ $('Code3').item.json.originalChatInput }}\n\nSimilar Past Tasks: {{ $json.title }}\n{{ $json.description }}\n{{ $json.est_duration }}\n{{ $json.dur_conf }}\n{{ $json.reoccuring }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are an expert at estimating task durations and detecting task dependencies.\n\nYou will be provided with the following context:\n- Current Task: The parsed task object (title, description, project, etc.).\n- User's Request: The original user request.\n- Related Tasks: Similar completed tasks, including their durations, recurrence info, and task IDs.\n\nYour job is to analyze the provided context and determine 3 specific fields for a new task:\n\n1. est_duration (Required)\n   • Estimated minutes to complete the task (integer)\n   • Set to null ONLY if impossible to estimate\n\n2. dur_conf (Required)\n   • Your confidence in the duration estimate (integer 1-5)\n   • 1 = high confidence\n   • 5 = low confidence\n\n3. dependencies (Required)\n   • Array of task IDs that must be completed BEFORE this task can begin\n   • These are BLOCKING dependencies, not subtasks\n   • Look for phrases like \"after I finish\", \"once I complete\", \"when X is done\"\n   • Use the Dependent_Task_Vector_Search tool to find existing unfinished tasks that must be done first\n   • Return empty array [] if no blocking dependencies exist\n\nOutput Format:\nReturn ONLY a valid JSON object matching this exact structure:\n{\n  \"est_duration\": <integer_minutes_or_null>,\n  \"dur_conf\": <integer_1_to_5>,\n  \"dependencies\": [<array_of_task_ids_or_empty>]\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.9,
+      "position": [
+        800,
+        620
+      ],
+      "id": "714d4eb6-cc31-4992-ba74-8396725a12c7",
+      "name": "Duration, Dependencies"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Prepare for Embedding').item.json.task_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "embedding",
+              "fieldValue": "={{ $json.data[0].embedding }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2160,
+        160
+      ],
+      "id": "9f5a1157-8ed4-452f-886c-1358ea4b55b2",
+      "name": "Save Embedding",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IeWFpcXPM3QZKyFx",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/embeddings",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"text-embedding-3-small\",\n  \"input\": \"={{ $json.data }}\"\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        280
+      ],
+      "id": "1431f828-e633-46c0-b746-682d61c69c9b",
+      "name": "Create Embedding",
+      "credentials": {
+        "openAiApi": {
+          "id": "adOJRYPMvbKwB0LQ",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=- Original User Request: \n{{ $json.mainTask.notes }}\n- Parent Task: \n{{ $json.mainTask.title }}\n{{ $json.mainTask.description }}\n{{ $json.mainTask.est_duration }}\n{{ $('Has Subtasks?').item.json.mainTask.target_deadline }}\n{{ $json.mainTask.tags }}\n- Current Subtask: \n{{ $json.currentSubtask.title }}\n- All Subtasks:\n{{ $json.allSubtasksInOrder }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=You are an expert task planning assistant specializing in filling in missing data about subtasks.\n\nYou will be provided with the following context:\n- Original User Request: The initial request that created the parent task\n- Parent Task: Complete details of the parent task \n- Current Subtask: The title & info of the subtask you need to complete details for\n- Sibliing Subtasks: Information about other subtasks that are part of this parent task\n\nYou have access to the folloing tool:\n- Vector Search Tool: Use this to find similar past tasks and subtasks for reference\n\nYour job is to analyze the provided context and determine six specific fields for the current subtask:\n\n1. description (Required)\n   • Clear, actionable description of what needs to be done to complete this specific subtask\n   • Should be distinct from the parent task and other subtasks\n   • Focus on the specific outcome or deliverable\n\n2. est_duration (Required)\n   • Estimated minutes to complete this subtask (integer)\n   • Consider the parent task's total duration and how it should be distributed among all subtasks\n   • Account for dependencies and logical sequencing\n   • Must be > 0\n\n3. dur_conf (Required)\n   • Your confidence in the duration estimate (integer 1-5)\n   • 1 = high confidence (similar tasks found, clear scope)\n   • 3 = moderate confidence (some uncertainty in scope or complexity)\n   • 5 = low confidence (unclear requirements or no similar examples)\n\n4. target_deadline (Required)\n   • Appropriate deadline for this subtask in ISO format (YYYY-MM-DDTHH:MM:SS.sssZ)\n   • Set to null if no parent deadline exists\n   • If parent has deadline, work backwards considering:\n     - Other subtasks that must be completed\n     - Logical sequence and dependencies\n     - Buffer time for the parent task completion\n\n5. notes (Required)\n   • Additional relevant information not captured elsewhere\n   • Include any assumptions, dependencies, or special considerations\n   • Set to empty string \"\" if no additional notes needed\n   • Do not repeat information already in title or description\n\n6. tags (Required)\n   • Array of additional tags that should be added beyond existing ones\n   • Consider: skill requirements, tools needed, location, complexity level\n   • Return empty array [] if no additional tags are needed\n   • Do not include tags that are already present\n\nAnalysis Guidelines:\n- Use the vector search tool to find similar tasks for duration, description, notes & tags\n- Ensure subtask durations sum to a reasonable portion of parent task duration\n- Account for context switching and coordination overhead\n- Be realistic about what can be accomplished in the estimated timeframe\n\nOutput Format:\nReturn ONLY a valid JSON object matching this exact structure:\n{\n  \"description\": \"<clear_actionable_description>\",\n  \"est_duration\": <integer_minutes>,\n  \"dur_conf\": <integer_1_to_5>,\n  \"target_deadline\": \"<ISO_datetime_or_null>\",\n  \"notes\": \"<additional_info_or_empty_string>\",\n  \"tags\": [<array_of_additional_tags_or_empty>]\n}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.9,
+      "position": [
+        1820,
+        1140
+      ],
+      "id": "5dc54f41-5440-4154-8b86-51c1ca9f02fb",
+      "name": "SUB Title, Des, Dur, DL"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the subtasks array from the previous node\nconst subtasks = $('Prepare Tasks for DB').item.json.subtasks;\n\n// Get the main task info from the Insert Main Task node\nconst mainTaskData = $('Insert Main Task').item.json;\n\n// Create the main task object for context\nconst mainTask = {\n  title: mainTaskData.title,\n  description: mainTaskData.description,\n  project_id: mainTaskData.project_id,\n  task_status: mainTaskData.task_status,\n  priority: mainTaskData.priority,\n  est_duration: mainTaskData.est_duration,\n  dur_conf: mainTaskData.dur_conf,\n  tags: mainTaskData.tags,\n  notes: mainTaskData.notes\n};\n\n// Reverse the subtasks array and add metadata\nconst reversedSubtasks = subtasks\n  .map((subtask, index) => ({\n    ...subtask,\n    originalIndex: index,\n    processingOrder: subtasks.length - 1 - index,\n    totalSubtasks: subtasks.length\n  }))\n  .reverse();\n\n// Return each subtask as a separate item for the Loop Over Items node\nreturn reversedSubtasks.map(subtask => ({\n  json: {\n    currentSubtask: subtask,\n    allSubtasksInOrder: subtasks.map(st => st.title),\n    mainTask: mainTask\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1620,
+        860
+      ],
+      "id": "31026a63-3a56-43c5-8f77-d2a5ce1246f6",
+      "name": "Reverse Prep Subtasks"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1620,
+        1040
+      ],
+      "id": "e9d48b8f-339d-4816-94e8-be2ad7170537",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare task content for embedding\nconst mainTask = $('Insert SubTask').item.json;\n\n// Include only content that's useful for semantic similarity\nconst taskContent = [\n  mainTask.title,\n  mainTask.description,\n  mainTask.notes\n].filter(Boolean).join(' ');\n\n// Optional: Include project context for better matching\n// Get project name from the original workflow data\nconst projectName = $('Prepare Tasks for DB').item.json.mainTask.tags?.[0] || '';\n\n// Combine task content with project context\nconst embeddingContent = [\n  taskContent,\n  projectName ? `Project: ${projectName}` : ''\n].filter(Boolean).join(' ');\n\nreturn [{\n  json: {\n    task_id: mainTask.id,\n    data: embeddingContent,  // Changed from 'content' to 'data'\n    metadata: {\n      project_id: mainTask.project_id,\n      priority: mainTask.priority,\n      task_status: mainTask.task_status,\n      created_at: mainTask.created_at\n    }\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        860
+      ],
+      "id": "465ff8c0-9500-4181-8fb2-0caa1113bae8",
+      "name": "Prepare for Embedding1"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $('Prepare for Embedding1').item.json.task_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "embedding",
+              "fieldValue": "={{ $json.data[0].embedding }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2400,
+        1040
+      ],
+      "id": "869f1669-093b-4719-a1aa-4b97a0258a62",
+      "name": "Save Embedding1",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IeWFpcXPM3QZKyFx",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/embeddings",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"text-embedding-3-small\",\n  \"input\": \"={{ $json.data }}\"\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2400,
+        880
+      ],
+      "id": "de72ffb3-0c20-4cd7-801c-c74b1724de53",
+      "name": "Create Embedding1",
+      "credentials": {
+        "openAiApi": {
+          "id": "adOJRYPMvbKwB0LQ",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Main Task Saved",
+        "height": 540,
+        "width": 820,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1540,
+        120
+      ],
+      "id": "bdf3e972-9709-45fa-8dc5-fd55e1a9686f",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Subtask Saving Loop",
+        "height": 620,
+        "width": 1220,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        800
+      ],
+      "id": "498401b1-4aac-4597-9e9b-54ea6951feb1",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## LLMs Sorting out the Main Task",
+        "height": 480,
+        "width": 1100,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        220,
+        580
+      ],
+      "id": "77870c41-0b6d-4c6d-9434-8cbb46b23ad7",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Helper function to convert to the database's expected enum format\nfunction convertToDBEnum(status) {\n  const statusMap = {\n    'ready': \"'ready'\",\n    'dependent': \"'dependent'\", \n    'progressing': \"'progressing'\",\n    'done': \"'done'\",\n    'cancelled': \"'cancelled'\"\n  };\n  return statusMap[status] || \"'ready'\";\n}\n\n// Parse the LLM output (ensure it's a valid JSON string)\nconst llmOutputRaw = $('SUB Title, Des, Dur, DL').item.json.output;\nconst llmOutput = typeof llmOutputRaw === 'string' ? JSON.parse(llmOutputRaw) : llmOutputRaw;\n\n// Get the current subtask info\nconst subtask = $('Loop Over Items').item.json.currentSubtask;\n\n// Get the main task info from the Loop Over Items node (not Has Subtasks?)\nconst mainTask = $('Loop Over Items').item.json.mainTask;\n\n// Prepare the subtask object for Supabase\nconst subtaskForDB = {\n  title: subtask.title,\n  project_id: subtask.project_id,\n  task_status: convertToDBEnum(mainTask.task_status), // Use main task status and convert to DB format\n  priority: subtask.priority,\n  tags: Array.isArray(subtask.tags) ? [...new Set([...subtask.tags, ...(llmOutput.tags || [])])] : (llmOutput.tags || []),\n  description: llmOutput.description,\n  est_duration: llmOutput.est_duration,\n  dur_conf: llmOutput.dur_conf,\n  target_deadline: llmOutput.target_deadline,\n  dl_hardness: mainTask.dl_hardness, // Add dl_hardness from main task\n  notes: llmOutput.notes || subtask.notes || \"\"\n};\n\n// Return as an array for n8n compatibility\nreturn [\n  {\n    json: subtaskForDB\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        1160
+      ],
+      "id": "5a5a13c6-2819-4187-bede-45c10abdd4b6",
+      "name": "Subtask for Database"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "tasks",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "condition": "eq",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "subtasks",
+              "fieldValue": "={{ $json.subtasks }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2600,
+        1200
+      ],
+      "id": "3517dc13-7f76-41d0-b40f-7f5080aaa11a",
+      "name": "Save Embedding2",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IeWFpcXPM3QZKyFx",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the parent task ID from the \"Insert Main Task\" node (way back)\nconst parentTaskId = $('Insert Main Task').item.json.id;\n\n// Get the current subtask ID from the \"Save Embedding1\" node\nconst subtaskId = $('Save Embedding1').item.json.id;\n\n// Get the current dependencies array from the parent task (if any)\nconst currentDependencies = $('Insert Main Task').item.json.dependencies || [];\n\n// Add the new subtask ID to the dependencies array\nconst updatedDependencies = [...currentDependencies, subtaskId];\n\n// Prepare the update object for Supabase\nconst updateData = {\n  id: parentTaskId,\n  subtasks: updatedDependencies, // This is already an array\n  subtaskId: subtaskId,\n  parentTaskId: parentTaskId\n};\n\nreturn [\n  {\n    json: updateData\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2600,
+        1060
+      ],
+      "id": "60711894-e8c0-4cf3-802d-2b1e97e290e7",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "tableId": "tasks",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "title",
+              "fieldValue": "={{ $json.title }}"
+            },
+            {
+              "fieldId": "project_id",
+              "fieldValue": "={{ $json.project_id }}"
+            },
+            {
+              "fieldId": "priority",
+              "fieldValue": "={{ $json.priority }}"
+            },
+            {
+              "fieldId": "est_duration",
+              "fieldValue": "={{ $json.est_duration }}"
+            },
+            {
+              "fieldId": "dur_conf",
+              "fieldValue": "={{ $json.dur_conf }}"
+            },
+            {
+              "fieldId": "target_deadline",
+              "fieldValue": "={{ $json.target_deadline }}"
+            },
+            {
+              "fieldId": "description",
+              "fieldValue": "={{ $json.description }}"
+            },
+            {
+              "fieldId": "notes",
+              "fieldValue": "={{ $json.notes }}"
+            },
+            {
+              "fieldId": "tags",
+              "fieldValue": "={{ $json.tags }}"
+            },
+            {
+              "fieldId": "task_status",
+              "fieldValue": "={{ $json.task_status }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        1000
+      ],
+      "id": "14d8b0d4-6409-4a23-b4b5-4674e2f842f1",
+      "name": "Insert SubTask",
+      "credentials": {
+        "supabaseApi": {
+          "id": "IeWFpcXPM3QZKyFx",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Projects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Projects",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status, Priority, Deadline": {
+      "main": [
+        [
+          {
+            "node": "Prepare Tasks for DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Title, Description, Projects, Subtasks1",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Duration, Dependencies",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Status, Priority, Deadline",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "SUB Title, Des, Dur, DL",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Tasks for DB": {
+      "main": [
+        [
+          {
+            "node": "Insert Main Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Main Task": {
+      "main": [
+        [
+          {
+            "node": "Prepare for Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Subtasks?": {
+      "main": [
+        [
+          {
+            "node": "Reverse Prep Subtasks",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Code3": {
+      "main": [
+        [
+          {
+            "node": "Title, Description, Projects, Subtasks1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Title, Description, Projects, Subtasks1": {
+      "main": [
+        [
+          {
+            "node": "Code1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Projects": {
+      "main": [
+        [
+          {
+            "node": "Code3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code1": {
+      "main": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare for Embedding": {
+      "main": [
+        [
+          {
+            "node": "Create Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store": {
+      "main": [
+        [
+          {
+            "node": "Duration, Dependencies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI2": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store1": {
+      "ai_tool": [
+        [
+          {
+            "node": "Duration, Dependencies",
+            "type": "ai_tool",
+            "index": 0
+          },
+          {
+            "node": "SUB Title, Des, Dur, DL",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store1",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duration, Dependencies": {
+      "main": [
+        [
+          {
+            "node": "Status, Priority, Deadline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Embedding": {
+      "main": [
+        [
+          {
+            "node": "Has Subtasks?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Embedding": {
+      "main": [
+        [
+          {
+            "node": "Save Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SUB Title, Des, Dur, DL": {
+      "main": [
+        [
+          {
+            "node": "Subtask for Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reverse Prep Subtasks": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "SUB Title, Des, Dur, DL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare for Embedding1": {
+      "main": [
+        [
+          {
+            "node": "Create Embedding1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Embedding1": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Embedding1": {
+      "main": [
+        [
+          {
+            "node": "Save Embedding1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Subtask for Database": {
+      "main": [
+        [
+          {
+            "node": "Insert SubTask",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Embedding2": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Save Embedding2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert SubTask": {
+      "main": [
+        [
+          {
+            "node": "Prepare for Embedding1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b9b82d41d68b4cc3cb838d1fce85e598d4c0bc143e0e5e98b9cee330eb87c3d7"
+  }
+}

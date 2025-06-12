@@ -1,0 +1,10 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+When working on UI components, styling, or layouts:
+
+- Use [UI_Style_Guide.md](mdc:UI_Style_Guide.md) for exact Tailwind classes, colors, and typography
+- Follow [Front_End_Details.md](mdc:Front_End_Details.md) for component behavior and design specs
+- Reference [User_Experience.md](mdc:User_Experience.md) for interaction flows

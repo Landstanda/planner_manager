@@ -1,0 +1,648 @@
+{
+  "assessment_metadata": {
+    "version": "1.0",
+    "estimated_duration_minutes": 7,
+    "description": "Daily Planner AI Personality Assessment - MVP focused on 5 core motivational patterns",
+    "scoring_scale": {
+      "description": "All personality dimensions use a -5 to +5 scale",
+      "negative_5": "Strongly exhibits first trait (e.g., very candid, very reactive)",
+      "zero": "Balanced between both traits",
+      "positive_5": "Strongly exhibits second trait (e.g., very warm, very proactive)"
+    }
+  },
+  
+  "assessment_flow": [
+    {
+      "section": "criteria_discovery",
+      "title": "Understanding What Drives You",
+      "description": "Let's start by understanding what makes work and projects most engaging for you.",
+      "questions": [
+        {
+          "id": "criteria_main",
+          "type": "free_form_text",
+          "question": "When you think about work or projects where you feel most engaged and productive, what are the 3-5 most important things that make them that way for you?",
+          "placeholder": "e.g., autonomy, making an impact, learning new things, collaboration, stability, challenge...",
+          "analysis_prompt": "Extract 3-5 core motivational criteria from this response. Look for values like: autonomy, impact, learning, collaboration, stability, challenge, recognition, creativity, structure, variety, helping others, problem-solving, achievement, security, growth, etc. Return as a JSON array of strings.",
+          "scoring": {
+            "type": "criteria_extraction",
+            "stores_in": "criteria"
+          }
+        }
+      ]
+    },
+    
+    {
+      "section": "motivation_direction",
+      "title": "Understanding Your Motivation Style",
+      "description": "Now let's explore why these things matter to you.",
+      "questions": [
+        {
+          "id": "motivation_why_criteria",
+          "type": "free_form_text",
+          "question": "You mentioned [CRITERIA] as important to you. Why is [CRITERIA] important? What does having [CRITERIA] do for you?",
+          "note": "This question will be asked for each criterion identified in criteria_main",
+          "analysis_prompt": "Analyze this response for motivation direction. Look for language that indicates: TOWARD motivation (achieving, gaining, building, creating, reaching, accomplishing, getting, obtaining, improving) vs AWAY-FROM motivation (avoiding, preventing, escaping, stopping, reducing, eliminating, protecting from, not having). Score from -5 (strongly away-from) to +5 (strongly toward). Consider both explicit language and underlying intent.",
+          "scoring": {
+            "type": "toward_away_analysis",
+            "scale": [-5, 5],
+            "stores_in": "motivation_direction"
+          }
+        },
+        {
+          "id": "motivation_scenario",
+          "type": "multiple_choice",
+          "question": "When starting a new important project, what typically drives you most?",
+          "options": [
+            {
+              "text": "The exciting possibility of what I could achieve or create",
+              "score": 4
+            },
+            {
+              "text": "Making sure I don't fail or disappoint anyone",
+              "score": -4
+            },
+            {
+              "text": "A mix of both - excited about the outcome but also mindful of risks",
+              "score": 0
+            },
+            {
+              "text": "The challenge of solving problems and overcoming obstacles",
+              "score": 2
+            },
+            {
+              "text": "Avoiding the stress and consequences of not doing it",
+              "score": -3
+            }
+          ],
+          "scoring": {
+            "type": "direct_score",
+            "stores_in": "motivation_direction"
+          }
+        },
+        {
+          "id": "motivation_language",
+          "type": "multiple_choice",
+          "question": "Which statement resonates more with how you think about your goals?",
+          "options": [
+            {
+              "text": "I want to build something meaningful and impactful",
+              "score": 3
+            },
+            {
+              "text": "I don't want to waste my time on things that don't matter",
+              "score": -3
+            },
+            {
+              "text": "I want to achieve my potential and see what I'm capable of",
+              "score": 4
+            },
+            {
+              "text": "I don't want to look back with regret about missed opportunities",
+              "score": -2
+            }
+          ],
+          "scoring": {
+            "type": "direct_score",
+            "stores_in": "motivation_direction"
+          }
+        }
+      ]
+    },
+    
+    {
+      "section": "communication_tone",
+      "title": "Communication Style Preferences",
+      "description": "Let's understand how you prefer to receive feedback and communication.",
+      "questions": [
+        {
+          "id": "feedback_style",
+          "type": "multiple_choice",
+          "question": "When receiving feedback or guidance, you generally prefer:",
+          "options": [
+            {
+              "text": "Direct, straight-to-the-point communication - just tell me what I need to know",
+              "score": -4
+            },
+            {
+              "text": "Encouraging and supportive communication with context and reassurance",
+              "score": 4
+            },
+            {
+              "text": "A balanced approach - direct when needed, supportive when appropriate",
+              "score": 0
+            },
+            {
+              "text": "Honest and blunt feedback, even if it's uncomfortable",
+              "score": -5
+            },
+            {
+              "text": "Gentle guidance that helps me feel confident and motivated",
+              "score": 5
+            }
+          ],
+          "scoring": {
+            "type": "direct_score",
+            "stores_in": "warm_candid"
+          }
+        },
+        {
+          "id": "ai_assistant_tone",
+          "type": "multiple_choice",
+          "question": "If an AI assistant was helping you stay on track with your tasks, you'd want it to:",
+          "options": [
+            {
+              "text": "Be encouraging and celebrate my progress, even small wins",
+              "score": 3
+            },
+            {
+              "text": "Give me the facts and let me draw my own conclusions",
+              "score": -3
+            },
+            {
+              "text": "Call me out directly when I'm off track - no sugar-coating",
+              "score": -4
+            },
+            {
+              "text": "Motivate me with positive energy and enthusiasm",
+              "score": 4
+            },
+            {
+              "text": "Be respectfully honest about my progress without being harsh",
+              "score": -1
+            }
+          ],
+          "scoring": {
+            "type": "direct_score",
+            "stores_in": "warm_candid"
+          }
+        },
+        {
+          "id": "respect_authenticity",
+          "type": "likert_scale",
+          "question": "I lose respect for people who are overly positive or 'fake nice' when giving feedback.",
+          "scale": {
+            "strongly_disagree": {
+              "text": "Strongly Disagree",
+              "score": 5
+            },
+            "disagree": {
+              "text": "Disagree", 
+              "score": 2
+            },
+            "neutral": {
+              "text": "Neutral",
+              "score": 0
+            },
+            "agree": {
+              "text": "Agree",
+              "score": -2
+            },
+            "strongly_agree": {
+              "text": "Strongly Agree",
+              "score": -5
+            }
+          },
+          "scoring": {
+            "type": "direct_score",
+            "stores_in": "warm_candid"
+          }
+        }
+      ]
+    },
+    
+    {
+      "section": "proactive_reactive",
+      "title": "Your Approach to Action and Situations",
+      "description": "Let's understand how you typically approach situations and take action.",
+      "questions": [
+        {
+          "id": "work_story",
+          "type": "free_form_text",
+          "question": "Tell me about a recent work situation where you felt really effective or proud of how you handled things. What happened and what did you do?",
+          "analysis_prompt": "Analyze this story for proactive vs reactive patterns. Look for: PROACTIVE indicators (initiated action, planned ahead, took charge, created opportunities, anticipated problems, drove the situation, made things happen, took the lead) vs REACTIVE indicators (responded to situations, adapted to circumstances, waited for direction, reacted to problems as they arose, followed others' lead, adjusted to changes). Score from -5 (very reactive) to +5 (very proactive). Pay attention to who initiated actions and whether they drove the situation or responded to it.",
+          "scoring": {
+            "type": "proactive_reactive_analysis",
+            "scale": [-5, 5],
+            "stores_in": "proactive_reactive"
+          }
+        },
+        {
+          "id": "daily_approach",
+          "type": "multiple_choice",
+          "question": "When it comes to your daily work approach, you tend to:",
+          "options": [
+            {
+              "text": "Plan ahead and drive your agenda - you like to make things happen",
+              "score": 4
+            },
+            {
+              "text": "Respond well to what comes up - you're adaptable and go with the flow",
+              "score": -3
+            },
+            {
+              "text": "Take initiative on important things but stay flexible for everything else",
+              "score": 1
+            },
+            {
+              "text": "Wait to see what's needed and then respond effectively",
+              "score": -4
+            },
+            {
+              "text": "Actively shape situations and opportunities around you",
+              "score": 5
+            }
+          ],
+          "scoring": {
+            "type": "direct_score",
+            "stores_in": "proactive_reactive"
+          }
+        },
+        {
+          "id": "problem_approach",
+          "type": "multiple_choice",
+          "question": "When you notice a potential problem or opportunity:",
+          "options": [
+            {
+              "text": "I usually jump in and start working on it right away",
+              "score": 4
+            },
+            {
+              "text": "I wait to see if it becomes a real issue before acting",
+              "score": -3
+            },
+            {
+              "text": "I bring it up with others and see what they think we should do",
+              "score": -1
+            },
+            {
+              "text": "I start planning how to address it, even if action isn't needed yet",
+              "score": 3
+            },
+            {
+              "text": "I monitor the situation and respond when the time is right",
+              "score": -2
+            }
+          ],
+          "scoring": {
+            "type": "direct_score",
+            "stores_in": "proactive_reactive"
+          }
+        }
+      ]
+    },
+    
+    {
+      "section": "reassurance_needs",
+      "title": "Stress Management and Support Preferences",
+      "description": "Let's understand how you prefer to handle stress and deadlines.",
+      "questions": [
+        {
+          "id": "deadline_stress",
+          "type": "multiple_choice",
+          "question": "When you have an important deadline approaching:",
+          "options": [
+            {
+              "text": "I prefer regular check-ins and reassurance that I'm on track",
+              "score": 4
+            },
+            {
+              "text": "I just want to focus and don't need much support or checking in",
+              "score": -4
+            },
+            {
+              "text": "I like occasional updates on my progress but not too frequently",
+              "score": 0
+            },
+            {
+              "text": "I want buffer time warnings and help managing the stress",
+              "score": 5
+            },
+            {
+              "text": "I work best when left alone to handle it my way",
+              "score": -5
+            }
+          ],
+          "scoring": {
+            "type": "direct_score",
+            "stores_in": "reassurance_needs"
+          }
+        },
+        {
+          "id": "overwhelm_response",
+          "type": "multiple_choice",
+          "question": "When you start feeling overwhelmed with tasks:",
+          "options": [
+            {
+              "text": "I want someone to help me break things down and reassure me it's manageable",
+              "score": 5
+            },
+            {
+              "text": "I prefer to step back and figure it out on my own",
+              "score": -3
+            },
+            {
+              "text": "I like having options presented to me for how to handle it",
+              "score": 2
+            },
+            {
+              "text": "I just need to push through and don't want to dwell on the stress",
+              "score": -4
+            },
+            {
+              "text": "I want acknowledgment that it's a lot, plus practical help organizing",
+              "score": 4
+            }
+          ],
+          "scoring": {
+            "type": "direct_score",
+            "stores_in": "reassurance_needs"
+          }
+        },
+        {
+          "id": "uncertainty_comfort",
+          "type": "likert_scale",
+          "question": "I feel anxious when I don't know exactly how long tasks will take or if I'll meet deadlines.",
+          "scale": {
+            "strongly_disagree": {
+              "text": "Strongly Disagree",
+              "score": -5
+            },
+            "disagree": {
+              "text": "Disagree",
+              "score": -2
+            },
+            "neutral": {
+              "text": "Neutral",
+              "score": 0
+            },
+            "agree": {
+              "text": "Agree",
+              "score": 3
+            },
+            "strongly_agree": {
+              "text": "Strongly Agree",
+              "score": 5
+            }
+          },
+          "scoring": {
+            "type": "direct_score",
+            "stores_in": "reassurance_needs"
+          }
+        },
+        {
+          "id": "support_preference",
+          "type": "multiple_choice",
+          "question": "When facing a challenging task, you prefer an AI assistant to:",
+          "options": [
+            {
+              "text": "Remind me of my past successes and that I can handle this",
+              "score": 4
+            },
+            {
+              "text": "Just give me the information I need and let me handle it",
+              "score": -3
+            },
+            {
+              "text": "Break it down into smaller, less intimidating pieces",
+              "score": 5
+            },
+            {
+              "text": "Trust that I know what I'm doing and check in minimally",
+              "score": -4
+            },
+            {
+              "text": "Acknowledge the challenge but focus on practical next steps",
+              "score": 1
+            }
+          ],
+          "scoring": {
+            "type": "direct_score",
+            "stores_in": "reassurance_needs"
+          }
+        }
+      ]
+    },
+    
+    {
+      "section": "language_variety",
+      "title": "Communication Style and Language Preferences",
+      "description": "Finally, let's understand your preferences for how an AI should communicate with you.",
+      "questions": [
+        {
+          "id": "communication_consistency",
+          "type": "multiple_choice",
+          "question": "When an AI assistant communicates with you regularly, you prefer:",
+          "options": [
+            {
+              "text": "Consistent, predictable language so I know what to expect",
+              "score": -4
+            },
+            {
+              "text": "Varied, creative language that keeps interactions interesting",
+              "score": 4
+            },
+            {
+              "text": "A mix - consistent for important things, varied for casual interactions",
+              "score": 0
+            },
+            {
+              "text": "Professional and straightforward language that doesn't change much",
+              "score": -5
+            },
+            {
+              "text": "Playful, diverse language that adapts to different situations",
+              "score": 5
+            }
+          ],
+          "scoring": {
+            "type": "direct_score",
+            "stores_in": "language_variety"
+          }
+        },
+        {
+          "id": "novelty_preference",
+          "type": "likert_scale",
+          "question": "I enjoy when technology surprises me with creative or unexpected responses.",
+          "scale": {
+            "strongly_disagree": {
+              "text": "Strongly Disagree",
+              "score": -5
+            },
+            "disagree": {
+              "text": "Disagree",
+              "score": -2
+            },
+            "neutral": {
+              "text": "Neutral",
+              "score": 0
+            },
+            "agree": {
+              "text": "Agree",
+              "score": 3
+            },
+            "strongly_agree": {
+              "text": "Strongly Agree",
+              "score": 5
+            }
+          },
+          "scoring": {
+            "type": "direct_score",
+            "stores_in": "language_variety"
+          }
+        },
+        {
+          "id": "routine_comfort",
+          "type": "multiple_choice",
+          "question": "In your daily interactions with apps and tools:",
+          "options": [
+            {
+              "text": "I like when they work the same way every time - consistency is key",
+              "score": -4
+            },
+            {
+              "text": "I enjoy when they adapt and show me new features or approaches",
+              "score": 4
+            },
+            {
+              "text": "I want reliability for core functions but appreciate occasional variety",
+              "score": 1
+            },
+            {
+              "text": "I prefer predictable interfaces that don't change on me",
+              "score": -5
+            },
+            {
+              "text": "I like tools that evolve and surprise me with better ways to do things",
+              "score": 5
+            }
+          ],
+          "scoring": {
+            "type": "direct_score",
+            "stores_in": "language_variety"
+          }
+        }
+      ]
+    }
+  ],
+  
+  "scoring_system": {
+    "description": "Comprehensive scoring system for personality assessment",
+    "dimensions": {
+      "criteria": {
+        "type": "array_extraction",
+        "description": "Core motivational values extracted from free-form responses",
+        "analysis_method": "llm_extraction",
+        "storage": "TEXT[] in user_personality_profile.criteria"
+      },
+      "motivation_direction": {
+        "type": "averaged_score",
+        "scale": [-5, 5],
+        "description": "-5 = strongly away-from, +5 = strongly toward",
+        "questions": ["motivation_why_criteria", "motivation_scenario", "motivation_language"],
+        "weights": {
+          "motivation_why_criteria": 0.5,
+          "motivation_scenario": 0.3,
+          "motivation_language": 0.2
+        },
+        "storage": "SMALLINT in user_personality_profile.motivation_direction"
+      },
+      "warm_candid": {
+        "type": "averaged_score",
+        "scale": [-5, 5],
+        "description": "-5 = very candid/direct, +5 = very warm/encouraging",
+        "questions": ["feedback_style", "ai_assistant_tone", "respect_authenticity"],
+        "weights": {
+          "feedback_style": 0.4,
+          "ai_assistant_tone": 0.4,
+          "respect_authenticity": 0.2
+        },
+        "storage": "SMALLINT in user_personality_profile.warm_candid"
+      },
+      "proactive_reactive": {
+        "type": "averaged_score",
+        "scale": [-5, 5],
+        "description": "-5 = very reactive, +5 = very proactive",
+        "questions": ["work_story", "daily_approach", "problem_approach"],
+        "weights": {
+          "work_story": 0.5,
+          "daily_approach": 0.3,
+          "problem_approach": 0.2
+        },
+        "storage": "SMALLINT in user_personality_profile.proactive_reactive"
+      },
+      "reassurance_needs": {
+        "type": "averaged_score",
+        "scale": [-5, 5],
+        "description": "-5 = low reassurance needed, +5 = high reassurance needed",
+        "questions": ["deadline_stress", "overwhelm_response", "uncertainty_comfort", "support_preference"],
+        "weights": {
+          "deadline_stress": 0.3,
+          "overwhelm_response": 0.3,
+          "uncertainty_comfort": 0.2,
+          "support_preference": 0.2
+        },
+        "storage": "SMALLINT in user_personality_profile.reassurance_needs"
+      },
+      "language_variety": {
+        "type": "averaged_score",
+        "scale": [-5, 5],
+        "description": "-5 = consistent language, +5 = varied/creative language",
+        "questions": ["communication_consistency", "novelty_preference", "routine_comfort"],
+        "weights": {
+          "communication_consistency": 0.4,
+          "novelty_preference": 0.3,
+          "routine_comfort": 0.3
+        },
+        "storage": "SMALLINT in user_personality_profile.language_variety"
+      }
+    }
+  },
+  
+  "llm_analysis_prompts": {
+    "criteria_extraction": {
+      "system_prompt": "You are an expert at identifying core motivational values and criteria from user responses. Extract 3-5 key motivational criteria from the user's response.",
+      "user_prompt": "From this response about what makes work engaging: '{user_response}'\n\nExtract 3-5 core motivational criteria. Look for values like autonomy, impact, learning, collaboration, stability, challenge, recognition, creativity, structure, variety, helping others, problem-solving, achievement, security, growth, etc.\n\nReturn ONLY a JSON array of strings, like: [\"autonomy\", \"impact\", \"learning\"]"
+    },
+    "toward_away_analysis": {
+      "system_prompt": "You are an expert in NLP motivation direction analysis. Analyze text for toward vs away-from motivation patterns.",
+      "user_prompt": "Analyze this response for motivation direction: '{user_response}'\n\nLook for:\n- TOWARD language: achieving, gaining, building, creating, reaching, accomplishing, getting, obtaining, improving, success, growth, opportunity\n- AWAY-FROM language: avoiding, preventing, escaping, stopping, reducing, eliminating, protecting from, not having, problems, risks, failure\n\nScore from -5 (strongly away-from) to +5 (strongly toward). Consider both explicit language and underlying intent.\n\nReturn ONLY a number between -5 and 5."
+    },
+    "proactive_reactive_analysis": {
+      "system_prompt": "You are an expert at analyzing behavioral patterns for proactive vs reactive tendencies from personal stories.",
+      "user_prompt": "Analyze this work story for proactive vs reactive patterns: '{user_response}'\n\nLook for:\n- PROACTIVE indicators: initiated action, planned ahead, took charge, created opportunities, anticipated problems, drove the situation, made things happen, took the lead, started something\n- REACTIVE indicators: responded to situations, adapted to circumstances, waited for direction, reacted to problems as they arose, followed others' lead, adjusted to changes, was asked to do something\n\nPay attention to WHO initiated actions and whether they drove the situation or responded to it.\n\nScore from -5 (very reactive) to +5 (very proactive).\n\nReturn ONLY a number between -5 and 5."
+    }
+  },
+  
+  "confidence_scoring": {
+    "description": "System for calculating confidence in personality profile",
+    "factors": {
+      "response_consistency": {
+        "weight": 0.4,
+        "description": "How consistent are responses within each dimension"
+      },
+      "response_completeness": {
+        "weight": 0.3,
+        "description": "Did user complete all questions vs skip some"
+      },
+      "free_form_quality": {
+        "weight": 0.2,
+        "description": "Quality and depth of free-form responses"
+      },
+      "extreme_scores": {
+        "weight": 0.1,
+        "description": "Penalty for all extreme scores (may indicate response bias)"
+      }
+    },
+    "calculation": "Weighted average of factors, resulting in 0.0-1.0 confidence score"
+  },
+  
+  "implementation_notes": {
+    "question_flow": "Present questions in order, but allow skipping sections if needed",
+    "criteria_substitution": "Replace [CRITERIA] in motivation questions with actual criteria from user's response",
+    "response_validation": "Validate free-form responses have minimum length (e.g., 20 characters)",
+    "progress_tracking": "Show progress bar and estimated time remaining",
+    "save_strategy": "Save responses after each section in case user doesn't complete",
+    "retry_logic": "Allow users to retake assessment or individual sections",
+    "accessibility": "Ensure all question types are accessible (screen readers, keyboard navigation)"
+  }
+} 

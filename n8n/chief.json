@@ -1,0 +1,254 @@
+{
+    "nodes": [
+      {
+        "parameters": {
+          "sessionIdType": "customKey",
+          "sessionKey": "={{ $json.channel }}",
+          "contextWindowLength": 8
+        },
+        "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+        "typeVersion": 1.3,
+        "position": [
+          200,
+          740
+        ],
+        "id": "2fa0e1c5-e1e8-4c5c-9b3f-e9d112446552",
+        "name": "Simple Memory"
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "f6f485db-15c9-49c1-960e-c9cb23ff7a47",
+                "name": "channel",
+                "value": "=",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          -300,
+          640
+        ],
+        "id": "c3bbda28-933e-492d-b04f-c5c578f20084",
+        "name": "Memory Tracking"
+      },
+      {
+        "parameters": {
+          "path": "dfd2571d-67fd-4dab-b8a2-14d04d5c9a2e",
+          "authentication": "headerAuth",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -560,
+          520
+        ],
+        "id": "c49ee68f-37d7-46be-910e-f3543627c023",
+        "name": "Webhook",
+        "webhookId": "dfd2571d-67fd-4dab-b8a2-14d04d5c9a2e",
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "YlNe5HG7gIh82LpB",
+            "name": "Next.js Header Auth"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "name": "getTodo",
+          "description": "Call this tool to get information about the schedule.",
+          "workflowId": {
+            "__rl": true,
+            "value": "rYRYsMJrqZqtB8oE",
+            "mode": "list",
+            "cachedResultName": "CoF_Task-Creator"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {},
+            "matchingColumns": [],
+            "schema": [],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+        "typeVersion": 2,
+        "position": [
+          400,
+          900
+        ],
+        "id": "f66c2bcb-097e-4563-8bcb-6a52c3582bf7",
+        "name": "New Task"
+      },
+      {
+        "parameters": {
+          "name": "updateTask",
+          "description": "Call this tool to update a task.",
+          "workflowId": {
+            "__rl": true,
+            "value": "Wq89Bc1WH0rmJuwy",
+            "mode": "list",
+            "cachedResultName": "CoF_Task-Updater"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {},
+            "matchingColumns": [],
+            "schema": [],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+        "typeVersion": 2,
+        "position": [
+          700,
+          900
+        ],
+        "id": "606e42d1-8e3f-46c1-a9fa-62770a3afa67",
+        "name": "Update Task"
+      },
+      {
+        "parameters": {
+          "name": "scheduler",
+          "description": "Call this tool to update a project, template schedule, instructions or facts.",
+          "workflowId": {
+            "__rl": true,
+            "value": "kSJQ49D53X8akq70",
+            "mode": "list",
+            "cachedResultName": "Todo_Update"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {},
+            "matchingColumns": [],
+            "schema": [],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+        "typeVersion": 2,
+        "position": [
+          840,
+          900
+        ],
+        "id": "f98dad7d-b67f-4466-9015-66254eb2eab7",
+        "name": "Life Update"
+      },
+      {
+        "parameters": {
+          "name": "scheduler",
+          "description": "Call this tool to update the schedule.",
+          "workflowId": {
+            "__rl": true,
+            "value": "svaUOoQb1DFvcF0w",
+            "mode": "list",
+            "cachedResultName": "CoF_Scheduler"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {},
+            "matchingColumns": [],
+            "schema": [],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+        "typeVersion": 2,
+        "position": [
+          540,
+          900
+        ],
+        "id": "d3c19d30-e29c-4d2e-99aa-39f4d2ba3969",
+        "name": "Scheduler"
+      },
+      {
+        "parameters": {
+          "model": {
+            "__rl": true,
+            "value": "gpt-4.1",
+            "mode": "list",
+            "cachedResultName": "gpt-4.1"
+          },
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "typeVersion": 1.2,
+        "position": [
+          20,
+          740
+        ],
+        "id": "ef12c949-4ea3-4e39-bbe1-d338202f13a6",
+        "name": "4.1",
+        "credentials": {
+          "openAiApi": {
+            "id": "adOJRYPMvbKwB0LQ",
+            "name": "OpenAi account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Simple Memory": {
+        "ai_memory": [
+          []
+        ]
+      },
+      "Memory Tracking": {
+        "main": [
+          []
+        ]
+      },
+      "Webhook": {
+        "main": [
+          [
+            {
+              "node": "Memory Tracking",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "New Task": {
+        "ai_tool": [
+          []
+        ]
+      },
+      "Update Task": {
+        "ai_tool": [
+          []
+        ]
+      },
+      "Life Update": {
+        "ai_tool": [
+          []
+        ]
+      },
+      "Scheduler": {
+        "ai_tool": [
+          []
+        ]
+      },
+      "4.1": {
+        "ai_languageModel": [
+          []
+        ]
+      }
+    },
+    "pinData": {},
+    "meta": {
+      "templateCredsSetupCompleted": true,
+      "instanceId": "b9b82d41d68b4cc3cb838d1fce85e598d4c0bc143e0e5e98b9cee330eb87c3d7"
+    }
+  }

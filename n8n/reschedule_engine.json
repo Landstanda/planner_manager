@@ -1,0 +1,360 @@
+{
+    "nodes": [
+      {
+        "parameters": {
+          "options": {}
+        },
+        "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+        "typeVersion": 1.1,
+        "position": [
+          -220,
+          240
+        ],
+        "id": "ded1c689-a18c-44bf-a760-1fb756e0ec98",
+        "name": "When chat message received",
+        "webhookId": "reschedule-engine-webhook"
+      },
+      {
+        "parameters": {
+          "inputSource": "passthrough"
+        },
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.1,
+        "position": [
+          -220,
+          420
+        ],
+        "id": "9b8c3d01-cdb7-42fc-ba38-4c94db4fbc7b",
+        "name": "When Called by Another Workflow"
+      },
+      {
+        "parameters": {
+          "operation": "getAll",
+          "tableId": "daily_schedule"
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          60,
+          100
+        ],
+        "id": "9cdb5317-e9ef-47fc-9aef-9dd02b511757",
+        "name": "Get Current Schedule",
+        "credentials": {
+          "supabaseApi": {
+            "id": "IeWFpcXPM3QZKyFx",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "getAll",
+          "tableId": "schedule_template",
+          "filterType": "none"
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          60,
+          260
+        ],
+        "id": "32286693-0f51-4a0e-854a-ef7d674bf854",
+        "name": "Get Schedule Template",
+        "credentials": {
+          "supabaseApi": {
+            "id": "IeWFpcXPM3QZKyFx",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "getAll",
+          "tableId": "tasks"
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          60,
+          420
+        ],
+        "id": "f83b6315-e772-49ed-9934-c70534d9e59f",
+        "name": "Get Active Tasks",
+        "credentials": {
+          "supabaseApi": {
+            "id": "IeWFpcXPM3QZKyFx",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Process input data for reschedule analysis\nconst scheduleItems = $('Get Current Schedule').all();\nconst templateItems = $('Get Schedule Template').all();\nconst activeTaskItems = $('Get Active Tasks').all();\n\n// Get the change event that triggered rescheduling\nlet triggerData;\ntry {\n  triggerData = $('When chat message received').first().json;\n} catch (e) {\n  try {\n    triggerData = $('When Called by Another Workflow').first().json;\n  } catch (e2) {\n    triggerData = { changeEvent: null, context: 'No change event provided' };\n  }\n}\n\n// Extract change event information\nconst changeEvent = triggerData.changeEvent || {\n  type: 'unknown', // 'task_completed_early', 'task_runs_late', 'new_urgent_task', 'task_cancelled'\n  affectedTaskId: null,\n  newTimeNeeded: null,\n  urgentTaskData: null,\n  timestamp: new Date().toISOString()\n};\n\n// Process current schedule\nconst currentSchedule = scheduleItems.map(item => {\n  const schedule = item.json;\n  return {\n    uid: schedule.uid,\n    dtstart: schedule.dtstart,\n    dtend: schedule.dtend,\n    summary: schedule.summary,\n    description: schedule.description,\n    event_status: schedule.event_status,\n    created_at: schedule.created_at\n  };\n});\n\n// Process schedule template for boundary enforcement\nconst scheduleTemplate = templateItems.map(item => {\n  const template = item.json;\n  return {\n    block_id: template.block_id,\n    day_type: template.day_type,\n    start_time: template.start_time,\n    end_time: template.end_time,\n    block_type: template.block_type,\n    flexible: template.flexible,\n    notes: template.notes\n  };\n});\n\n// Process active tasks for priority analysis\nconst activeTasks = activeTaskItems.map(item => {\n  const task = item.json;\n  return {\n    id: task.id,\n    title: task.title,\n    priority: task.priority,\n    target_deadline: task.target_deadline,\n    dl_hardness: task.dl_hardness,\n    dependencies: task.dependencies || [],\n    subtasks: task.subtasks || [],\n    est_duration: task.est_duration,\n    task_status: task.task_status,\n    project_id: task.project_id\n  };\n});\n\n// Identify affected schedule entries based on change type\nfunction identifyAffectedEntries(changeEvent, currentSchedule) {\n  const affected = [];\n  const now = new Date();\n  \n  switch (changeEvent.type) {\n    case 'task_completed_early':\n      // Find the completed task and all subsequent tasks today\n      const completedTaskSchedule = currentSchedule.find(s => \n        s.summary && s.summary.includes(changeEvent.affectedTaskId)\n      );\n      if (completedTaskSchedule) {\n        const completedTime = new Date(completedTaskSchedule.dtstart);\n        affected.push(...currentSchedule.filter(s => {\n          const scheduleTime = new Date(s.dtstart);\n          return scheduleTime > completedTime && \n                 scheduleTime.toDateString() === completedTime.toDateString();\n        }));\n      }\n      break;\n      \n    case 'task_runs_late':\n      // Find the late task and all subsequent tasks\n      const lateTaskSchedule = currentSchedule.find(s => \n        s.summary && s.summary.includes(changeEvent.affectedTaskId)\n      );\n      if (lateTaskSchedule) {\n        const lateTaskTime = new Date(lateTaskSchedule.dtstart);\n        affected.push(...currentSchedule.filter(s => {\n          const scheduleTime = new Date(s.dtstart);\n          return scheduleTime >= lateTaskTime;\n        }));\n      }\n      break;\n      \n    case 'new_urgent_task':\n      // All tasks from now until end of day might be affected\n      affected.push(...currentSchedule.filter(s => {\n        const scheduleTime = new Date(s.dtstart);\n        return scheduleTime >= now;\n      }));\n      break;\n      \n    case 'task_cancelled':\n      // Find the cancelled task - this creates free time\n      const cancelledTaskSchedule = currentSchedule.find(s => \n        s.summary && s.summary.includes(changeEvent.affectedTaskId)\n      );\n      if (cancelledTaskSchedule) {\n        affected.push(cancelledTaskSchedule);\n      }\n      break;\n  }\n  \n  return affected;\n}\n\nconst affectedEntries = identifyAffectedEntries(changeEvent, currentSchedule);\n\n// Calculate available time windows considering template boundaries\nfunction calculateAvailableWindows(scheduleTemplate, currentSchedule, startTime) {\n  const availableWindows = [];\n  const today = new Date(startTime);\n  const todayStr = today.toISOString().split('T')[0];\n  \n  // Get workday template blocks\n  const workdayBlocks = scheduleTemplate.filter(t => \n    t.day_type === 'workday' && t.block_type === 'available'\n  );\n  \n  for (const block of workdayBlocks) {\n    const blockStart = new Date(`${todayStr}T${block.start_time}`);\n    const blockEnd = new Date(`${todayStr}T${block.end_time}`);\n    \n    // Skip blocks that are in the past\n    if (blockEnd <= startTime) continue;\n    \n    // Adjust start time if we're in the middle of a block\n    const windowStart = blockStart < startTime ? startTime : blockStart;\n    \n    // Check for conflicts with existing schedule\n    const conflicts = currentSchedule.filter(s => {\n      const scheduleStart = new Date(s.dtstart);\n      const scheduleEnd = new Date(s.dtend);\n      return !(scheduleEnd <= windowStart || scheduleStart >= blockEnd);\n    });\n    \n    if (conflicts.length === 0) {\n      // No conflicts - entire block is available\n      availableWindows.push({\n        start: windowStart,\n        end: blockEnd,\n        duration: (blockEnd - windowStart) / (1000 * 60), // minutes\n        block_type: block.block_type,\n        flexible: block.flexible\n      });\n    } else {\n      // Find gaps between conflicts\n      const sortedConflicts = conflicts.sort((a, b) => \n        new Date(a.dtstart) - new Date(b.dtstart)\n      );\n      \n      let gapStart = windowStart;\n      for (const conflict of sortedConflicts) {\n        const conflictStart = new Date(conflict.dtstart);\n        const conflictEnd = new Date(conflict.dtend);\n        \n        if (gapStart < conflictStart) {\n          availableWindows.push({\n            start: gapStart,\n            end: conflictStart,\n            duration: (conflictStart - gapStart) / (1000 * 60),\n            block_type: block.block_type,\n            flexible: block.flexible\n          });\n        }\n        gapStart = new Date(Math.max(gapStart, conflictEnd));\n      }\n      \n      // Check for gap after last conflict\n      if (gapStart < blockEnd) {\n        availableWindows.push({\n          start: gapStart,\n          end: blockEnd,\n          duration: (blockEnd - gapStart) / (1000 * 60),\n          block_type: block.block_type,\n          flexible: block.flexible\n        });\n      }\n    }\n  }\n  \n  return availableWindows.filter(w => w.duration >= 10); // At least 10 minutes\n}\n\nconst availableWindows = calculateAvailableWindows(\n  scheduleTemplate, \n  currentSchedule, \n  new Date()\n);\n\nreturn [{\n  json: {\n    changeEvent: changeEvent,\n    currentSchedule: currentSchedule,\n    scheduleTemplate: scheduleTemplate,\n    activeTasks: activeTasks,\n    affectedEntries: affectedEntries,\n    availableWindows: availableWindows,\n    context: {\n      totalAffectedEntries: affectedEntries.length,\n      totalAvailableWindows: availableWindows.length,\n      changeType: changeEvent.type,\n      analysisTimestamp: new Date().toISOString()\n    }\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          280,
+          420
+        ],
+        "id": "cd70bdf6-a8ff-47d0-a80e-1c6dbbc575b9",
+        "name": "Analyze Reschedule Impact"
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "=Change Event: {{ $json.changeEvent }}\n\nAffected Schedule Entries: {{ $json.affectedEntries }}\n\nAvailable Time Windows: {{ $json.availableWindows }}\n\nActive Tasks: {{ $json.activeTasks }}\n\nSchedule Template Boundaries: {{ $json.scheduleTemplate }}\n\nContext: {{ $json.context }}",
+          "hasOutputParser": true,
+          "options": {
+            "systemMessage": "=You are an expert reschedule engine for a personal AI assistant. Your job is to create an optimal rescheduling plan when changes occur to minimize disruption while maintaining priorities.\n\n**Your Rescheduling Criteria:**\n\n1. **Priority Preservation:**\n   - High priority tasks (1-2) keep the best available time slots\n   - Maintain deadline urgency ordering (earlier deadlines = better slots)\n   - Consider dl_hardness (1=hard deadline, 5=flexible)\n\n2. **Disruption Minimization:**\n   - Move as few tasks as possible\n   - Prefer time shifts over complete rescheduling\n   - Maintain logical task sequence when dependencies exist\n\n3. **Boundary Enforcement:**\n   - Respect schedule template work time-blocks absolutely\n   - Only schedule work projects during work time-blocks\n   - Never schedule during personal/break time blocks\n   - Honor lunch breaks, family time, etc.\n\n4. **Handling Rescheduling-Types:**\n   - **Task Completed Early:** Pull forward subsequent tasks or add new task\n   - **Task Runs Late:** Push back affected tasks, compress if possible\n   - **New Urgent Task:** Push back schedule, defer low priority or last task\n   - **Task Cancelled:** Pull forward other tasks or add in filler task\n\n5. **Overflow Management:**\n   - If tasks won't fit today, defer until tomorrow\n   - Notify about deferrals with clear reasoning\n   - Suggest deadline negotiations for hard conflicts\n\n**Rescheduling Output Format:**\nReturn ONLY a JSON object with this exact structure:\n\n```json\n{\n  \"reschedule_successful\": true,\n  \"changes_made\": [\n    {\n      \"task_id\": \"uuid-here\",\n      \"action\": \"moved\",\n      \"old_time\": \"14:00:00\",\n      \"new_time\": \"15:30:00\",\n      \"reason\": \"Shifted 90 minutes due to urgent task insertion\"\n    },\n    {\n      \"task_id\": \"uuid-here-2\",\n      \"action\": \"inserted\",\n      \"new_time\": \"14:00:00\",\n      \"duration\": 60,\n      \"reason\": \"New urgent task allocated to freed time slot\"\n    }\n  ],\n  \"deferred_tasks\": [\n    {\n      \"task_id\": \"uuid-here-3\",\n      \"task_title\": \"Low priority admin work\",\n      \"reason\": \"No available time today, moved to tomorrow\",\n      \"suggested_date\": \"2024-01-16\"\n    }\n  ],\n  \"disruption_score\": 3,\n  \"total_tasks_affected\": 4,\n  \"total_time_saved_or_used\": \"+30 minutes\",\n  \"boundary_violations\": [],\n  \"priority_conflicts\": [],\n  \"summary\": \"Successfully rescheduled 4 tasks with minimal disruption. Inserted urgent task into freed 2:00 PM slot, shifted 3 subsequent tasks by 60-90 minutes. No boundary violations.\",\n  \"user_notifications\": [\n    \"Your urgent meeting has been scheduled for 2:00 PM\",\n    \"3 tasks have been shifted later by 60-90 minutes\",\n    \"Low priority admin work moved to tomorrow morning\"\n  ],\n  \"next_steps\": [\n    \"update_daily_schedule_table\",\n    \"notify_user_of_changes\",\n    \"set_reminders_for_new_times\"\n  ]\n}\n```\n\n**Field Definitions:**\n- `reschedule_successful`: boolean - whether rescheduling was completed\n- `changes_made`: array - all schedule modifications with detailed reasoning\n- `deferred_tasks`: array - tasks that couldn't fit today\n- `disruption_score`: 1-10 - how disruptive the changes are (1=minimal, 10=major)\n- `total_tasks_affected`: number - count of tasks that were moved/changed\n- `total_time_saved_or_used`: string - net time impact (\"+30 minutes\" or \"-15 minutes\")\n- `boundary_violations`: array - any template boundary issues (should be empty)\n- `priority_conflicts`: array - any unresolved priority issues\n- `summary`: string - clear explanation of what was done\n- `user_notifications`: array - messages to show the user about changes\n- `next_steps`: array - what actions should follow this rescheduling\n\n**Decision Rules:**\n1. NEVER violate schedule template boundaries (work hours, breaks, personal time)\n2. Always preserve relative priority ordering when possible\n3. Minimize the number of tasks that need to move\n4. Prefer time shifts over complete rescheduling to different days\n5. Defer lowest priority tasks if unable to fit everything\n6. Maintain task dependencies and logical sequences\n7. Always explain reasoning clearly for user understanding\n\n**Response Format:**\nReturn ONLY the JSON object. No additional text or explanation outside the JSON."
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 1.9,
+        "position": [
+          560,
+          320
+        ],
+        "id": "87cc02d3-667f-42b1-941b-aac78cadcbf8",
+        "name": "Reschedule Planning Agent"
+      },
+      {
+        "parameters": {
+          "model": {
+            "__rl": true,
+            "value": "gpt-4.1",
+            "mode": "list",
+            "cachedResultName": "gpt-4.1"
+          },
+          "options": {
+            "temperature": 0.3
+          }
+        },
+        "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "typeVersion": 1.2,
+        "position": [
+          560,
+          540
+        ],
+        "id": "c56edac4-3cff-431a-bf0f-b75a41b94714",
+        "name": "OpenAI Model",
+        "credentials": {
+          "openAiApi": {
+            "id": "adOJRYPMvbKwB0LQ",
+            "name": "OpenAi account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "// Finalize successful reschedule with summary\nconst rescheduleResult = $('Apply Schedule Updates').item.json;\n\nreturn [{\n  json: {\n    ...rescheduleResult,\n    finalMessage: `Reschedule complete: ${rescheduleResult.reschedule.summary}`,\n    userNotifications: rescheduleResult.reschedule.user_notifications,\n    nextSteps: rescheduleResult.reschedule.next_steps,\n    disruptionLevel: rescheduleResult.reschedule.disruption_score <= 3 ? 'low' : \n                     rescheduleResult.reschedule.disruption_score <= 6 ? 'medium' : 'high'\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1400,
+          200
+        ],
+        "id": "f610e96a-985c-4448-b8dc-55182a585ac1",
+        "name": "Finalize Reschedule"
+      },
+      {
+        "parameters": {
+          "content": "## Reschedule Engine\n\nThis workflow handles cascade rescheduling when changes occur to \nminimize disruption while maintaining priorities.\n\n**Input:** Change event (early completion, runs late, new urgent task, cancellation)\n\n**Rescheduling Logic:**\n- Identify affected schedule entries\n- Preserve priority ordering\n- Minimize total disruption\n- Respect schedule template boundaries\n- Handle overflow with deferrals\n\n**Output:** Detailed reschedule plan + database updates\n\n**Used By:**\n- Dynamic Adjuster workflow\n- Task Updater workflow (status changes)\n- Morning Planner workflow (conflict resolution)",
+          "height": 540,
+          "width": 1060,
+          "color": 5
+        },
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -620,
+          60
+        ],
+        "id": "0bc2bef8-eba0-4e40-b9cc-5ef701cc1e43",
+        "name": "Workflow Description"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Parse and validate the reschedule plan\nconst rescheduleOutput = JSON.parse($('Reschedule Planning Agent').item.json.output);\n\n// Add metadata and prepare final reschedule result\nconst reschedule = {\n  ...rescheduleOutput,\n  timestamp: new Date().toISOString(),\n  workflow_version: \"reschedule_engine_v1.0\",\n  input_change_event: $('Analyze Reschedule Impact').item.json.changeEvent,\n  reschedule_context: {\n    original_affected_entries: $('Analyze Reschedule Impact').item.json.context.totalAffectedEntries,\n    available_windows: $('Analyze Reschedule Impact').item.json.context.totalAvailableWindows,\n    change_type: $('Analyze Reschedule Impact').item.json.context.changeType\n  }\n};\n\n// Validate reschedule result\nif (!reschedule.reschedule_successful && reschedule.changes_made.length > 0) {\n  console.warn(\"Reschedule marked as unsuccessful but changes were made\");\n}\n\n// Ensure disruption score is between 1-10\nif (reschedule.disruption_score < 1 || reschedule.disruption_score > 10) {\n  reschedule.disruption_score = Math.max(1, Math.min(10, reschedule.disruption_score));\n}\n\n// Validate boundary violations (should be empty)\nif (reschedule.boundary_violations && reschedule.boundary_violations.length > 0) {\n  console.error(\"Boundary violations detected:\", reschedule.boundary_violations);\n}\n\n// Prepare database updates for successful reschedules\nlet scheduleUpdates = [];\nif (reschedule.reschedule_successful && reschedule.changes_made.length > 0) {\n  scheduleUpdates = reschedule.changes_made.map(change => {\n    return {\n      task_id: change.task_id,\n      action: change.action,\n      old_time: change.old_time,\n      new_time: change.new_time,\n      new_duration: change.duration,\n      reason: change.reason\n    };\n  });\n}\n\nreturn [{\n  json: {\n    reschedule: reschedule,\n    scheduleUpdates: scheduleUpdates,\n    success: reschedule.reschedule_successful,\n    workflow: \"reschedule_engine\"\n  }\n}];"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          900,
+          320
+        ],
+        "id": "2fa51717-9394-4b35-a8a7-311480518350",
+        "name": "Reschedule Plan Array Prep"
+      },
+      {
+        "parameters": {
+          "options": {}
+        },
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [
+          1180,
+          360
+        ],
+        "id": "89d22dd7-5846-4fae-aca5-03235f0211c2",
+        "name": "Update Each Rescheduled Task"
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "tableId": "daily_schedule"
+        },
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [
+          1480,
+          420
+        ],
+        "id": "6d69bb87-3ed4-4188-89be-8ed59b6ac2ac",
+        "name": "Update Daily Schedule",
+        "credentials": {
+          "supabaseApi": {
+            "id": "IeWFpcXPM3QZKyFx",
+            "name": "Supabase account"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "When chat message received": {
+        "main": [
+          [
+            {
+              "node": "Get Current Schedule",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "When Called by Another Workflow": {
+        "main": [
+          [
+            {
+              "node": "Get Current Schedule",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Current Schedule": {
+        "main": [
+          [
+            {
+              "node": "Get Schedule Template",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Schedule Template": {
+        "main": [
+          [
+            {
+              "node": "Get Active Tasks",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Get Active Tasks": {
+        "main": [
+          [
+            {
+              "node": "Analyze Reschedule Impact",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Analyze Reschedule Impact": {
+        "main": [
+          [
+            {
+              "node": "Reschedule Planning Agent",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Reschedule Planning Agent": {
+        "main": [
+          [
+            {
+              "node": "Reschedule Plan Array Prep",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "OpenAI Model": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "Reschedule Planning Agent",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Reschedule Plan Array Prep": {
+        "main": [
+          [
+            {
+              "node": "Update Each Rescheduled Task",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update Each Rescheduled Task": {
+        "main": [
+          [
+            {
+              "node": "Finalize Reschedule",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Update Daily Schedule",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update Daily Schedule": {
+        "main": [
+          [
+            {
+              "node": "Update Each Rescheduled Task",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "pinData": {},
+    "meta": {
+      "templateCredsSetupCompleted": true,
+      "instanceId": "b9b82d41d68b4cc3cb838d1fce85e598d4c0bc143e0e5e98b9cee330eb87c3d7"
+    }
+  }
