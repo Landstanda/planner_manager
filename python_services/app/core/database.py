@@ -5,35 +5,55 @@ Database configuration and session management for Supabase PostgreSQL.
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 import structlog
-from app.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
-# SQLAlchemy setup
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.debug,
-    future=True
-)
-
-# Async session maker
-AsyncSessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False
-)
-
 # Base class for SQLAlchemy models
 Base = declarative_base()
+
+# Global variables for lazy initialization
+engine = None
+AsyncSessionLocal = None
 
 # Lazy-loaded Supabase clients
 _supabase_client = None
 _supabase_admin_client = None
 
 
+def get_engine():
+    """Get or create the async database engine."""
+    global engine
+    if engine is None:
+        from app.core.config import settings
+        
+        # DIAGNOSTIC: Print the DATABASE_URL being used
+        print(f"DIAGNOSTIC: Creating engine with DATABASE_URL: {settings.database_url}")
+        logger.info("Creating database engine", database_url=settings.database_url[:50] + "...")
+        
+        engine = create_async_engine(
+            settings.database_url,
+            echo=settings.debug,
+            future=True
+        )
+    return engine
+
+
+def get_session_maker():
+    """Get or create the async session maker."""
+    global AsyncSessionLocal
+    if AsyncSessionLocal is None:
+        AsyncSessionLocal = async_sessionmaker(
+            get_engine(),
+            class_=AsyncSession,
+            expire_on_commit=False
+        )
+    return AsyncSessionLocal
+
+
 def _create_supabase_client():
     """Create Supabase client with error handling."""
     try:
+        from app.core.config import settings
         # Only create if we have real credentials
         if (settings.supabase_url != "https://your-project.supabase.co" and 
             settings.supabase_anon_key != "your-anon-key"):
@@ -50,6 +70,7 @@ def _create_supabase_client():
 def _create_supabase_admin_client():
     """Create Supabase admin client with error handling."""
     try:
+        from app.core.config import settings
         # Only create if we have real credentials
         if (settings.supabase_url != "https://your-project.supabase.co" and 
             settings.supabase_service_role_key != "your-service-role-key"):
@@ -65,7 +86,8 @@ def _create_supabase_admin_client():
 
 async def get_database_session() -> AsyncSession:
     """Dependency to get database session."""
-    async with AsyncSessionLocal() as session:
+    session_maker = get_session_maker()
+    async with session_maker() as session:
         try:
             yield session
         finally:

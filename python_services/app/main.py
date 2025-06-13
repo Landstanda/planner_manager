@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 import structlog
+import os
 
 from app.core.config import settings
 from app.core.database import get_database_session, get_supabase_client
@@ -31,6 +32,18 @@ structlog.configure(
 )
 
 logger = structlog.get_logger(__name__)
+
+# DIAGNOSTIC: Print configuration values at startup
+print("=" * 60)
+print("DIAGNOSTIC: Configuration Values at Startup")
+print("=" * 60)
+print(f"DATABASE_URL from os.environ: {os.environ.get('DATABASE_URL', 'NOT SET')}")
+print(f"DATABASE_URL from settings: {settings.database_url}")
+print(f"SUPABASE_URL from settings: {settings.supabase_url}")
+print(f"SUPABASE_ANON_KEY from settings: {settings.supabase_anon_key[:20]}..." if settings.supabase_anon_key else "NOT SET")
+print(f"SUPABASE_SERVICE_ROLE_KEY from settings: {settings.supabase_service_role_key[:20]}..." if settings.supabase_service_role_key else "NOT SET")
+print(f"Debug mode: {settings.debug}")
+print("=" * 60)
 
 # Create FastAPI app
 app = FastAPI(
